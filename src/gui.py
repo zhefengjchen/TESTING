@@ -82,7 +82,7 @@ class InvoiceTable(ctk.CTkFrame):
             self.tree_frame,
             columns=column_ids,
             show="headings",
-            selectmode="browse"
+            selectmode="extended"  # Enable multi-select
         )
 
         # Configure columns
@@ -153,6 +153,29 @@ class InvoiceTable(ctk.CTkFrame):
         """Clear the current selection."""
         self.tree.selection_remove(self.tree.selection())
         self.selected_id = None
+
+    def get_selected_records(self) -> List[Dict[str, Any]]:
+        """Get all selected records (for multi-select)."""
+        selected_records = []
+        for item_id in self.tree.selection():
+            item = self.tree.item(item_id)
+            values = item['values']
+            if values:
+                record_id = values[0]  # ID is first column
+                record = next((r for r in self.data if r.get('id') == record_id), None)
+                if record:
+                    selected_records.append(record)
+        return selected_records
+
+    def get_selected_ids(self) -> List[int]:
+        """Get all selected record IDs (for multi-select)."""
+        selected_ids = []
+        for item_id in self.tree.selection():
+            item = self.tree.item(item_id)
+            values = item['values']
+            if values:
+                selected_ids.append(values[0])  # ID is first column
+        return selected_ids
 
 
 class EditDialog(ctk.CTkToplevel):
@@ -261,6 +284,180 @@ class EditDialog(ctk.CTkToplevel):
         # Keep the ID if editing
         if 'id' in self.record:
             self.result['id'] = self.record['id']
+
+        self.destroy()
+
+    def _on_cancel(self):
+        """Cancel the dialog."""
+        self.result = None
+        self.destroy()
+
+    def get_result(self) -> Optional[Dict[str, Any]]:
+        """Get the result after dialog closes."""
+        self.wait_window()
+        return self.result
+
+
+class BulkEditDialog(ctk.CTkToplevel):
+    """Dialog for bulk editing multiple invoice records."""
+
+    FIELD_CONFIG = [
+        ("lab_name", "Lab Name"),
+        ("development_center", "Development Center"),
+        ("category", "Category"),
+        ("test_service_type", "Test/Service Type"),
+        ("testing_sla", "Testing SLA"),
+        ("test_inspection_location", "Test Location"),
+        ("product_line", "Product Line"),
+        ("amazon_quality_manager", "Quality Manager"),
+        ("amazon_sourcing_manager", "Sourcing Manager"),
+        ("invoice_date", "Invoice Date"),
+        ("comment", "Comment"),
+    ]
+
+    def __init__(self, parent, record_count: int, title: str = "Bulk Edit"):
+        super().__init__(parent)
+
+        self.record_count = record_count
+        self.result = None
+        self.checkboxes = {}
+        self.entries = {}
+
+        self.title(title)
+        self.geometry("650x550")
+        self.resizable(True, True)
+
+        # Make dialog modal
+        self.transient(parent)
+        self.grab_set()
+
+        self._create_widgets()
+
+        # Center the dialog
+        self.update_idletasks()
+        x = (self.winfo_screenwidth() - self.winfo_width()) // 2
+        y = (self.winfo_screenheight() - self.winfo_height()) // 2
+        self.geometry(f"+{x}+{y}")
+
+    def _create_widgets(self):
+        """Create dialog widgets."""
+        # Info label
+        info_frame = ctk.CTkFrame(self, fg_color="transparent")
+        info_frame.pack(fill="x", padx=10, pady=10)
+
+        info_label = ctk.CTkLabel(
+            info_frame,
+            text=f"Editing {self.record_count} selected records.\n"
+                 "Check the fields you want to update and enter new values.",
+            font=ctk.CTkFont(size=12),
+            justify="left"
+        )
+        info_label.pack(anchor="w")
+
+        # Scrollable frame for fields
+        scroll_frame = ctk.CTkScrollableFrame(self, width=610, height=400)
+        scroll_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+        # Create fields with checkboxes
+        for field_id, field_label in self.FIELD_CONFIG:
+            frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
+            frame.pack(fill="x", pady=3)
+
+            # Checkbox to enable/disable field
+            checkbox_var = ctk.BooleanVar(value=False)
+            checkbox = ctk.CTkCheckBox(
+                frame,
+                text="",
+                variable=checkbox_var,
+                width=24,
+                command=lambda fid=field_id: self._toggle_field(fid)
+            )
+            checkbox.pack(side="left", padx=5)
+            self.checkboxes[field_id] = checkbox_var
+
+            # Label
+            label = ctk.CTkLabel(frame, text=field_label, width=150, anchor="w")
+            label.pack(side="left", padx=5)
+
+            # Entry (initially disabled)
+            entry = ctk.CTkEntry(frame, width=350, state="disabled")
+            entry.pack(side="left", padx=5)
+            self.entries[field_id] = entry
+
+        # Buttons frame
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=10, pady=10)
+
+        apply_btn = ctk.CTkButton(
+            btn_frame,
+            text="Apply to All Selected",
+            command=self._on_apply,
+            width=150,
+            fg_color="green",
+            hover_color="darkgreen"
+        )
+        apply_btn.pack(side="right", padx=5)
+
+        cancel_btn = ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            command=self._on_cancel,
+            width=100,
+            fg_color="gray",
+            hover_color="darkgray"
+        )
+        cancel_btn.pack(side="right", padx=5)
+
+        # Select all / Deselect all buttons
+        select_all_btn = ctk.CTkButton(
+            btn_frame,
+            text="Select All Fields",
+            command=self._select_all,
+            width=120
+        )
+        select_all_btn.pack(side="left", padx=5)
+
+        deselect_all_btn = ctk.CTkButton(
+            btn_frame,
+            text="Deselect All",
+            command=self._deselect_all,
+            width=100,
+            fg_color="gray",
+            hover_color="darkgray"
+        )
+        deselect_all_btn.pack(side="left", padx=5)
+
+    def _toggle_field(self, field_id: str):
+        """Toggle field entry state based on checkbox."""
+        if self.checkboxes[field_id].get():
+            self.entries[field_id].configure(state="normal")
+        else:
+            self.entries[field_id].configure(state="disabled")
+
+    def _select_all(self):
+        """Select all field checkboxes."""
+        for field_id in self.checkboxes:
+            self.checkboxes[field_id].set(True)
+            self.entries[field_id].configure(state="normal")
+
+    def _deselect_all(self):
+        """Deselect all field checkboxes."""
+        for field_id in self.checkboxes:
+            self.checkboxes[field_id].set(False)
+            self.entries[field_id].configure(state="disabled")
+
+    def _on_apply(self):
+        """Apply the bulk edit."""
+        self.result = {}
+        for field_id, checkbox_var in self.checkboxes.items():
+            if checkbox_var.get():
+                value = self.entries[field_id].get().strip()
+                self.result[field_id] = value
+
+        if not self.result:
+            from tkinter import messagebox
+            messagebox.showwarning("Warning", "Please select at least one field to update")
+            return
 
         self.destroy()
 
@@ -591,6 +788,20 @@ class MainApplication(ctk.CTk):
                                    fg_color="red", hover_color="darkred")
         delete_btn.pack(side="left", padx=5, pady=5)
 
+        # Separator
+        separator = ctk.CTkLabel(toolbar, text="|", width=10)
+        separator.pack(side="left", padx=2, pady=5)
+
+        # Bulk Edit button
+        bulk_edit_btn = ctk.CTkButton(toolbar, text="📝 Bulk Edit", command=self._bulk_edit, width=100,
+                                      fg_color="#6B4C9A", hover_color="#4A3570")
+        bulk_edit_btn.pack(side="left", padx=5, pady=5)
+
+        # Bulk Delete button
+        bulk_delete_btn = ctk.CTkButton(toolbar, text="🗑️ Bulk Delete", command=self._bulk_delete, width=110,
+                                        fg_color="#8B0000", hover_color="#5C0000")
+        bulk_delete_btn.pack(side="left", padx=5, pady=5)
+
         # Refresh button
         refresh_btn = ctk.CTkButton(toolbar, text="🔄 Refresh", command=self._refresh_data, width=100)
         refresh_btn.pack(side="left", padx=5, pady=5)
@@ -820,6 +1031,82 @@ class MainApplication(ctk.CTk):
             self.selected_record = None
             self._refresh_data()
             self._update_status(f"Record {record_id} deleted")
+
+    def _bulk_edit(self):
+        """Bulk edit multiple selected rows."""
+        # Get the current table
+        if self.current_tab == "invoices":
+            table = self.invoices_table
+        elif self.current_tab == "abnormal":
+            table = self.abnormal_table
+        else:
+            messagebox.showwarning("Warning", "Bulk edit is not available in Settings")
+            return
+
+        selected_ids = table.get_selected_ids()
+
+        if len(selected_ids) < 2:
+            messagebox.showwarning("Warning", "Please select at least 2 records for bulk edit.\n"
+                                              "Use Ctrl+Click or Shift+Click to select multiple rows.")
+            return
+
+        # Show bulk edit dialog
+        dialog = BulkEditDialog(self, record_count=len(selected_ids))
+        result = dialog.get_result()
+
+        if result:
+            # Apply changes to all selected records
+            success_count = 0
+            for record_id in selected_ids:
+                if self.current_tab == "invoices":
+                    if self.database.update_invoice(record_id, result):
+                        success_count += 1
+                else:
+                    if self.database.update_abnormal_invoice(record_id, result):
+                        success_count += 1
+
+            self._refresh_data()
+            self._update_status(f"Bulk edit: {success_count} records updated")
+            messagebox.showinfo("Success", f"Successfully updated {success_count} records.")
+
+    def _bulk_delete(self):
+        """Bulk delete multiple selected rows."""
+        # Get the current table
+        if self.current_tab == "invoices":
+            table = self.invoices_table
+        elif self.current_tab == "abnormal":
+            table = self.abnormal_table
+        else:
+            messagebox.showwarning("Warning", "Bulk delete is not available in Settings")
+            return
+
+        selected_ids = table.get_selected_ids()
+
+        if len(selected_ids) < 2:
+            messagebox.showwarning("Warning", "Please select at least 2 records for bulk delete.\n"
+                                              "Use Ctrl+Click or Shift+Click to select multiple rows.")
+            return
+
+        # Confirm deletion
+        if not messagebox.askyesno("Confirm Bulk Delete",
+                                   f"Are you sure you want to delete {len(selected_ids)} selected records?\n\n"
+                                   "This action cannot be undone."):
+            return
+
+        # Delete all selected records
+        success_count = 0
+        for record_id in selected_ids:
+            if self.current_tab == "invoices":
+                if self.database.delete_invoice(record_id):
+                    success_count += 1
+            else:
+                if self.database.delete_abnormal_invoice(record_id):
+                    success_count += 1
+
+        self.selected_record = None
+        self._refresh_data()
+        self._update_status(f"Bulk delete: {success_count} records deleted")
+        messagebox.showinfo("Success", f"Successfully deleted {success_count} records.")
 
     def _refresh_data(self):
         """Refresh all data tables."""
