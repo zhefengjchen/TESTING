@@ -1,0 +1,12 @@
+# Invoice Management System Dependencies
+
+# GUI Framework
+customtkinter>=5.2.0
+
+# Excel file handling
+openpyxl>=3.1.0
+
+# Standard library modules used (no installation needed):
+# - sqlite3 (database)
+# - tkinter (base GUI - comes with Python)
+# - os, sys, re, datetime, typing (utilities)
