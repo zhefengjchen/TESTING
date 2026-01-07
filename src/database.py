@@ -74,7 +74,7 @@ class Database:
     DEFAULT_LAB_NAMES = ["BV", "ITS", "TUV", "SGS"]
 
     # Default database directory for Windows
-    DEFAULT_DB_DIR = r"C:\Amazon\AI\CODING PROJECT\INVOICE MANAGEMENT SYSTEM"
+    DEFAULT_DB_DIR = r"C:\Amazon\AI\CODING PROJECT\INVOICE MANAGEMENT SYSTEM\invoice database"
     DEFAULT_DB_PATH = os.path.join(DEFAULT_DB_DIR, "invoices.db")
 
     def __init__(self, db_path: str = None):
