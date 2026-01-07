@@ -73,8 +73,14 @@ class Database:
     # Default lab names
     DEFAULT_LAB_NAMES = ["BV", "ITS", "TUV", "SGS"]
 
-    def __init__(self, db_path: str = "data/invoices.db"):
+    # Default database directory for Windows
+    DEFAULT_DB_DIR = r"C:\Amazon\AI\CODING PROJECT\INVOICE MANAGEMENT SYSTEM"
+    DEFAULT_DB_PATH = os.path.join(DEFAULT_DB_DIR, "invoices.db")
+
+    def __init__(self, db_path: str = None):
         """Initialize database connection."""
+        if db_path is None:
+            db_path = self.DEFAULT_DB_PATH
         self.db_path = db_path
         self._ensure_db_directory()
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
