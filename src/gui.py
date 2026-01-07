@@ -654,6 +654,429 @@ class SettingsFrame(ctk.CTkFrame):
             self._refresh_tests()
 
 
+class SummaryFrame(ctk.CTkFrame):
+    """Summary panel for invoice analytics and statistics."""
+
+    MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+    def __init__(self, parent, database: Database, **kwargs):
+        super().__init__(parent, **kwargs)
+
+        self.database = database
+        self.current_year = datetime.now().year
+        self.current_view = "cost"  # cost, volume, unit_cost
+
+        self._create_widgets()
+
+    def _create_widgets(self):
+        """Create summary widgets."""
+        # Title and controls
+        header_frame = ctk.CTkFrame(self, fg_color="transparent")
+        header_frame.pack(fill="x", padx=10, pady=5)
+
+        title = ctk.CTkLabel(header_frame, text="Invoice Summary",
+                            font=ctk.CTkFont(size=20, weight="bold"))
+        title.pack(side="left", padx=10)
+
+        # Year selector
+        year_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+        year_frame.pack(side="right", padx=10)
+
+        ctk.CTkLabel(year_frame, text="Year:").pack(side="left", padx=5)
+        years = [str(y) for y in range(2020, datetime.now().year + 2)]
+        self.year_combo = ctk.CTkComboBox(year_frame, values=years, width=100,
+                                          command=self._on_year_change)
+        self.year_combo.set(str(self.current_year))
+        self.year_combo.pack(side="left", padx=5)
+
+        # Refresh button
+        refresh_btn = ctk.CTkButton(year_frame, text="Refresh",
+                                    command=self.refresh_data, width=80)
+        refresh_btn.pack(side="left", padx=10)
+
+        # View selector tabs
+        view_frame = ctk.CTkFrame(self)
+        view_frame.pack(fill="x", padx=10, pady=5)
+
+        self.view_buttons = {}
+
+        cost_btn = ctk.CTkButton(view_frame, text="Total Cost (USD)",
+                                 command=lambda: self._switch_view("cost"))
+        cost_btn.pack(side="left", padx=5)
+        self.view_buttons["cost"] = cost_btn
+
+        volume_btn = ctk.CTkButton(view_frame, text="Number of Tests",
+                                   command=lambda: self._switch_view("volume"))
+        volume_btn.pack(side="left", padx=5)
+        self.view_buttons["volume"] = volume_btn
+
+        unit_btn = ctk.CTkButton(view_frame, text="Unit Cost (USD)",
+                                 command=lambda: self._switch_view("unit_cost"))
+        unit_btn.pack(side="left", padx=5)
+        self.view_buttons["unit_cost"] = unit_btn
+
+        lab_btn = ctk.CTkButton(view_frame, text="By Lab",
+                                command=lambda: self._switch_view("by_lab"))
+        lab_btn.pack(side="left", padx=5)
+        self.view_buttons["by_lab"] = lab_btn
+
+        # Summary statistics cards
+        self._create_stats_cards()
+
+        # Data table frame
+        self.table_frame = ctk.CTkFrame(self)
+        self.table_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+        self._create_summary_table()
+        self._switch_view("cost")
+
+    def _create_stats_cards(self):
+        """Create summary statistics cards."""
+        cards_frame = ctk.CTkFrame(self, fg_color="transparent")
+        cards_frame.pack(fill="x", padx=10, pady=10)
+
+        # Total Cost Card
+        self.total_cost_card = self._create_card(cards_frame, "Total Cost", "$0.00", "#1f538d")
+        self.total_cost_card.pack(side="left", padx=10, expand=True, fill="x")
+
+        # Total Tests Card
+        self.total_tests_card = self._create_card(cards_frame, "Total Tests", "0", "#2d7d46")
+        self.total_tests_card.pack(side="left", padx=10, expand=True, fill="x")
+
+        # Avg Cost Card
+        self.avg_cost_card = self._create_card(cards_frame, "Avg Cost/Test", "$0.00", "#6B4C9A")
+        self.avg_cost_card.pack(side="left", padx=10, expand=True, fill="x")
+
+        # Active Labs Card
+        self.labs_card = self._create_card(cards_frame, "Active Labs", "0", "#b8860b")
+        self.labs_card.pack(side="left", padx=10, expand=True, fill="x")
+
+    def _create_card(self, parent, title: str, value: str, color: str) -> ctk.CTkFrame:
+        """Create a statistics card."""
+        card = ctk.CTkFrame(parent, fg_color=color, corner_radius=10)
+
+        title_label = ctk.CTkLabel(card, text=title, font=ctk.CTkFont(size=12))
+        title_label.pack(pady=(10, 2))
+
+        value_label = ctk.CTkLabel(card, text=value, font=ctk.CTkFont(size=24, weight="bold"))
+        value_label.pack(pady=(2, 10))
+
+        # Store reference to value label for updates
+        card.value_label = value_label
+
+        return card
+
+    def _create_summary_table(self):
+        """Create the summary data table."""
+        # Create treeview with style
+        style = ttk.Style()
+        style.configure("Summary.Treeview",
+                       background="#2b2b2b",
+                       foreground="white",
+                       fieldbackground="#2b2b2b",
+                       rowheight=25)
+        style.configure("Summary.Treeview.Heading",
+                       background="#1f538d",
+                       foreground="white",
+                       relief="flat")
+
+        # Columns: Test Type + 12 months + Total
+        columns = ["test_type"] + self.MONTHS + ["Total"]
+
+        self.summary_tree = ttk.Treeview(
+            self.table_frame,
+            columns=columns,
+            show="headings",
+            style="Summary.Treeview"
+        )
+
+        # Configure columns
+        self.summary_tree.heading("test_type", text="Test/Service Type", anchor="w")
+        self.summary_tree.column("test_type", width=200, minwidth=150, anchor="w")
+
+        for month in self.MONTHS:
+            self.summary_tree.heading(month, text=month, anchor="e")
+            self.summary_tree.column(month, width=80, minwidth=60, anchor="e")
+
+        self.summary_tree.heading("Total", text="Total", anchor="e")
+        self.summary_tree.column("Total", width=100, minwidth=80, anchor="e")
+
+        # Scrollbars
+        vsb = ttk.Scrollbar(self.table_frame, orient="vertical", command=self.summary_tree.yview)
+        hsb = ttk.Scrollbar(self.table_frame, orient="horizontal", command=self.summary_tree.xview)
+        self.summary_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
+        # Grid layout
+        self.summary_tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
+
+        self.table_frame.grid_rowconfigure(0, weight=1)
+        self.table_frame.grid_columnconfigure(0, weight=1)
+
+    def _switch_view(self, view: str):
+        """Switch between different summary views."""
+        self.current_view = view
+
+        # Update button colors
+        for v, btn in self.view_buttons.items():
+            if v == view:
+                btn.configure(fg_color=("#3B8ED0", "#1F6AA5"))
+            else:
+                btn.configure(fg_color="gray")
+
+        self.refresh_data()
+
+    def _on_year_change(self, value):
+        """Handle year selection change."""
+        self.current_year = int(value)
+        self.refresh_data()
+
+    def refresh_data(self):
+        """Refresh summary data."""
+        invoices = self.database.get_all_invoices()
+
+        # Filter by year
+        year_invoices = []
+        for inv in invoices:
+            inv_date = inv.get('invoice_date', '') or inv.get('request_date', '')
+            if inv_date and str(self.current_year) in str(inv_date)[:4]:
+                year_invoices.append(inv)
+
+        # Calculate summary statistics
+        self._update_stats_cards(year_invoices)
+
+        # Update table based on current view
+        if self.current_view == "cost":
+            self._show_cost_summary(year_invoices)
+        elif self.current_view == "volume":
+            self._show_volume_summary(year_invoices)
+        elif self.current_view == "unit_cost":
+            self._show_unit_cost_summary(year_invoices)
+        elif self.current_view == "by_lab":
+            self._show_lab_summary(year_invoices)
+
+    def _update_stats_cards(self, invoices: List[Dict[str, Any]]):
+        """Update the statistics cards."""
+        total_cost = sum(float(inv.get('amount_usd', 0) or 0) for inv in invoices)
+        total_tests = len(invoices)
+        avg_cost = total_cost / total_tests if total_tests > 0 else 0
+        active_labs = len(set(inv.get('lab_name', '') for inv in invoices if inv.get('lab_name')))
+
+        self.total_cost_card.value_label.configure(text=f"${total_cost:,.2f}")
+        self.total_tests_card.value_label.configure(text=f"{total_tests:,}")
+        self.avg_cost_card.value_label.configure(text=f"${avg_cost:,.2f}")
+        self.labs_card.value_label.configure(text=str(active_labs))
+
+    def _get_month_from_date(self, date_str: str) -> Optional[int]:
+        """Extract month (1-12) from date string."""
+        if not date_str:
+            return None
+        try:
+            # Try YYYY-MM-DD format
+            if '-' in str(date_str):
+                parts = str(date_str).split('-')
+                if len(parts) >= 2:
+                    return int(parts[1])
+            # Try other formats
+            for fmt in ['%Y-%m-%d', '%m/%d/%Y', '%d/%m/%Y']:
+                try:
+                    dt = datetime.strptime(str(date_str)[:10], fmt)
+                    return dt.month
+                except ValueError:
+                    continue
+        except (ValueError, IndexError):
+            pass
+        return None
+
+    def _show_cost_summary(self, invoices: List[Dict[str, Any]]):
+        """Show total cost by test type and month."""
+        self.summary_tree.delete(*self.summary_tree.get_children())
+
+        # Group by test type and month
+        data = {}
+        for inv in invoices:
+            test_type = inv.get('test_service_type', 'Unknown') or 'Unknown'
+            amount = float(inv.get('amount_usd', 0) or 0)
+            date_str = inv.get('invoice_date', '') or inv.get('request_date', '')
+            month = self._get_month_from_date(date_str)
+
+            if test_type not in data:
+                data[test_type] = {m: 0 for m in range(1, 13)}
+
+            if month:
+                data[test_type][month] += amount
+
+        # Add rows
+        grand_totals = {m: 0 for m in range(1, 13)}
+        for test_type in sorted(data.keys()):
+            row_data = [test_type]
+            row_total = 0
+            for m in range(1, 13):
+                val = data[test_type][m]
+                row_data.append(f"${val:,.0f}" if val > 0 else "-")
+                row_total += val
+                grand_totals[m] += val
+            row_data.append(f"${row_total:,.0f}")
+            self.summary_tree.insert('', 'end', values=row_data)
+
+        # Add grand total row
+        total_row = ["TOTAL"]
+        grand_total = 0
+        for m in range(1, 13):
+            total_row.append(f"${grand_totals[m]:,.0f}" if grand_totals[m] > 0 else "-")
+            grand_total += grand_totals[m]
+        total_row.append(f"${grand_total:,.0f}")
+        self.summary_tree.insert('', 'end', values=total_row, tags=('total',))
+
+    def _show_volume_summary(self, invoices: List[Dict[str, Any]]):
+        """Show test volume by test type and month."""
+        self.summary_tree.delete(*self.summary_tree.get_children())
+
+        # Group by test type and month
+        data = {}
+        for inv in invoices:
+            test_type = inv.get('test_service_type', 'Unknown') or 'Unknown'
+            date_str = inv.get('invoice_date', '') or inv.get('request_date', '')
+            month = self._get_month_from_date(date_str)
+
+            if test_type not in data:
+                data[test_type] = {m: 0 for m in range(1, 13)}
+
+            if month:
+                data[test_type][month] += 1
+
+        # Add rows
+        grand_totals = {m: 0 for m in range(1, 13)}
+        for test_type in sorted(data.keys()):
+            row_data = [test_type]
+            row_total = 0
+            for m in range(1, 13):
+                val = data[test_type][m]
+                row_data.append(str(val) if val > 0 else "-")
+                row_total += val
+                grand_totals[m] += val
+            row_data.append(str(row_total))
+            self.summary_tree.insert('', 'end', values=row_data)
+
+        # Add grand total row
+        total_row = ["TOTAL"]
+        grand_total = 0
+        for m in range(1, 13):
+            total_row.append(str(grand_totals[m]) if grand_totals[m] > 0 else "-")
+            grand_total += grand_totals[m]
+        total_row.append(str(grand_total))
+        self.summary_tree.insert('', 'end', values=total_row, tags=('total',))
+
+    def _show_unit_cost_summary(self, invoices: List[Dict[str, Any]]):
+        """Show unit cost (avg cost per test) by test type and month."""
+        self.summary_tree.delete(*self.summary_tree.get_children())
+
+        # Group by test type and month - need both cost and count
+        cost_data = {}
+        count_data = {}
+        for inv in invoices:
+            test_type = inv.get('test_service_type', 'Unknown') or 'Unknown'
+            amount = float(inv.get('amount_usd', 0) or 0)
+            date_str = inv.get('invoice_date', '') or inv.get('request_date', '')
+            month = self._get_month_from_date(date_str)
+
+            if test_type not in cost_data:
+                cost_data[test_type] = {m: 0 for m in range(1, 13)}
+                count_data[test_type] = {m: 0 for m in range(1, 13)}
+
+            if month:
+                cost_data[test_type][month] += amount
+                count_data[test_type][month] += 1
+
+        # Add rows
+        grand_costs = {m: 0 for m in range(1, 13)}
+        grand_counts = {m: 0 for m in range(1, 13)}
+
+        for test_type in sorted(cost_data.keys()):
+            row_data = [test_type]
+            row_total_cost = 0
+            row_total_count = 0
+            for m in range(1, 13):
+                cost = cost_data[test_type][m]
+                count = count_data[test_type][m]
+                if count > 0:
+                    unit_cost = cost / count
+                    row_data.append(f"${unit_cost:,.0f}")
+                else:
+                    row_data.append("-")
+                row_total_cost += cost
+                row_total_count += count
+                grand_costs[m] += cost
+                grand_counts[m] += count
+
+            # Row total (avg)
+            if row_total_count > 0:
+                row_data.append(f"${row_total_cost / row_total_count:,.0f}")
+            else:
+                row_data.append("-")
+            self.summary_tree.insert('', 'end', values=row_data)
+
+        # Add grand total row (overall averages)
+        total_row = ["TOTAL"]
+        grand_total_cost = 0
+        grand_total_count = 0
+        for m in range(1, 13):
+            if grand_counts[m] > 0:
+                total_row.append(f"${grand_costs[m] / grand_counts[m]:,.0f}")
+            else:
+                total_row.append("-")
+            grand_total_cost += grand_costs[m]
+            grand_total_count += grand_counts[m]
+
+        if grand_total_count > 0:
+            total_row.append(f"${grand_total_cost / grand_total_count:,.0f}")
+        else:
+            total_row.append("-")
+        self.summary_tree.insert('', 'end', values=total_row, tags=('total',))
+
+    def _show_lab_summary(self, invoices: List[Dict[str, Any]]):
+        """Show summary by lab."""
+        self.summary_tree.delete(*self.summary_tree.get_children())
+
+        # Group by lab and month
+        data = {}
+        for inv in invoices:
+            lab = inv.get('lab_name', 'Unknown') or 'Unknown'
+            amount = float(inv.get('amount_usd', 0) or 0)
+            date_str = inv.get('invoice_date', '') or inv.get('request_date', '')
+            month = self._get_month_from_date(date_str)
+
+            if lab not in data:
+                data[lab] = {m: 0 for m in range(1, 13)}
+
+            if month:
+                data[lab][month] += amount
+
+        # Add rows
+        grand_totals = {m: 0 for m in range(1, 13)}
+        for lab in sorted(data.keys()):
+            row_data = [lab]
+            row_total = 0
+            for m in range(1, 13):
+                val = data[lab][m]
+                row_data.append(f"${val:,.0f}" if val > 0 else "-")
+                row_total += val
+                grand_totals[m] += val
+            row_data.append(f"${row_total:,.0f}")
+            self.summary_tree.insert('', 'end', values=row_data)
+
+        # Add grand total row
+        total_row = ["TOTAL"]
+        grand_total = 0
+        for m in range(1, 13):
+            total_row.append(f"${grand_totals[m]:,.0f}" if grand_totals[m] > 0 else "-")
+            grand_total += grand_totals[m]
+        total_row.append(f"${grand_total:,.0f}")
+        self.summary_tree.insert('', 'end', values=total_row, tags=('total',))
+
+
 class FilterFrame(ctk.CTkFrame):
     """Filter panel for searching invoice data."""
 
@@ -834,6 +1257,12 @@ class MainApplication(ctk.CTk):
         settings_btn.pack(side="left", padx=5)
         self.tab_buttons["settings"] = settings_btn
 
+        summary_btn = ctk.CTkButton(tab_frame, text="Summary",
+                                    command=lambda: self._switch_tab("summary"),
+                                    fg_color="#2d7d46", hover_color="#1d5d30")
+        summary_btn.pack(side="left", padx=5)
+        self.tab_buttons["summary"] = summary_btn
+
         # Content container
         self.content_container = ctk.CTkFrame(self)
         self.content_container.pack(fill="both", expand=True, padx=10, pady=5)
@@ -842,6 +1271,7 @@ class MainApplication(ctk.CTk):
         self._create_invoices_tab()
         self._create_abnormal_tab()
         self._create_settings_tab()
+        self._create_summary_tab()
 
         # Show invoices tab by default
         self._switch_tab("invoices")
@@ -889,6 +1319,10 @@ class MainApplication(ctk.CTk):
         """Create the settings tab."""
         self.settings_frame = SettingsFrame(self.content_container, self.database)
 
+    def _create_summary_tab(self):
+        """Create the summary/analytics tab."""
+        self.summary_frame = SummaryFrame(self.content_container, self.database)
+
     def _create_status_bar(self):
         """Create the status bar."""
         self.status_bar = ctk.CTkLabel(self, text="Ready", anchor="w")
@@ -900,6 +1334,7 @@ class MainApplication(ctk.CTk):
         self.invoices_frame.pack_forget()
         self.abnormal_frame.pack_forget()
         self.settings_frame.pack_forget()
+        self.summary_frame.pack_forget()
 
         # Reset button colors
         for btn in self.tab_buttons.values():
@@ -913,9 +1348,13 @@ class MainApplication(ctk.CTk):
         elif tab == "abnormal":
             self.abnormal_frame.pack(fill="both", expand=True)
             self.tab_buttons["abnormal"].configure(fg_color=("#3B8ED0", "#1F6AA5"))
-        else:
+        elif tab == "settings":
             self.settings_frame.pack(fill="both", expand=True)
             self.tab_buttons["settings"].configure(fg_color=("#3B8ED0", "#1F6AA5"))
+        elif tab == "summary":
+            self.summary_frame.pack(fill="both", expand=True)
+            self.summary_frame.refresh_data()  # Refresh data when switching to summary
+            self.tab_buttons["summary"].configure(fg_color=("#2d7d46", "#1d5d30"))
 
     def _upload_invoice(self):
         """Handle invoice file upload."""
