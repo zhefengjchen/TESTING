@@ -781,8 +781,8 @@ class SummaryFrame(ctk.CTkFrame):
                        foreground="white",
                        relief="flat")
 
-        # Columns: Test Type + 12 months + Total
-        columns = ["test_type"] + self.MONTHS + ["Total"]
+        # Columns: Source + Test Type + 12 months + Total
+        columns = ["source", "test_type"] + self.MONTHS + ["Total"]
 
         self.summary_tree = ttk.Treeview(
             self.table_frame,
@@ -792,6 +792,9 @@ class SummaryFrame(ctk.CTkFrame):
         )
 
         # Configure columns
+        self.summary_tree.heading("source", text="Source", anchor="w")
+        self.summary_tree.column("source", width=80, minwidth=60, anchor="w")
+
         self.summary_tree.heading("test_type", text="Test/Service Type", anchor="w")
         self.summary_tree.column("test_type", width=200, minwidth=150, anchor="w")
 
@@ -835,29 +838,47 @@ class SummaryFrame(ctk.CTkFrame):
 
     def refresh_data(self):
         """Refresh summary data."""
-        invoices = self.database.get_all_invoices()
+        # Get both valid and abnormal invoices
+        valid_invoices = self.database.get_all_invoices()
+        abnormal_invoices = self.database.get_all_abnormal_invoices()
 
-        # Filter by year
-        year_invoices = []
-        for inv in invoices:
+        # Add source indicator to each record
+        for inv in valid_invoices:
+            inv['_source'] = 'Valid'
+        for inv in abnormal_invoices:
+            inv['_source'] = 'Abnormal'
+
+        # Filter by year - valid invoices
+        year_valid = []
+        for inv in valid_invoices:
             inv_date = inv.get('invoice_date', '') or inv.get('request_date', '')
             if inv_date and str(self.current_year) in str(inv_date)[:4]:
-                year_invoices.append(inv)
+                year_valid.append(inv)
+
+        # Filter by year - abnormal invoices
+        year_abnormal = []
+        for inv in abnormal_invoices:
+            inv_date = inv.get('invoice_date', '') or inv.get('request_date', '')
+            if inv_date and str(self.current_year) in str(inv_date)[:4]:
+                year_abnormal.append(inv)
+
+        # Combine for statistics (all invoices)
+        all_year_invoices = year_valid + year_abnormal
 
         # Calculate summary statistics
-        self._update_stats_cards(year_invoices)
+        self._update_stats_cards(all_year_invoices, len(year_valid), len(year_abnormal))
 
         # Update table based on current view
         if self.current_view == "cost":
-            self._show_cost_summary(year_invoices)
+            self._show_cost_summary(year_valid, year_abnormal)
         elif self.current_view == "volume":
-            self._show_volume_summary(year_invoices)
+            self._show_volume_summary(year_valid, year_abnormal)
         elif self.current_view == "unit_cost":
-            self._show_unit_cost_summary(year_invoices)
+            self._show_unit_cost_summary(year_valid, year_abnormal)
         elif self.current_view == "by_lab":
-            self._show_lab_summary(year_invoices)
+            self._show_lab_summary(year_valid, year_abnormal)
 
-    def _update_stats_cards(self, invoices: List[Dict[str, Any]]):
+    def _update_stats_cards(self, invoices: List[Dict[str, Any]], valid_count: int = 0, abnormal_count: int = 0):
         """Update the statistics cards."""
         total_cost = sum(float(inv.get('amount_usd', 0) or 0) for inv in invoices)
         total_tests = len(invoices)
@@ -865,7 +886,7 @@ class SummaryFrame(ctk.CTkFrame):
         active_labs = len(set(inv.get('lab_name', '') for inv in invoices if inv.get('lab_name')))
 
         self.total_cost_card.value_label.configure(text=f"${total_cost:,.2f}")
-        self.total_tests_card.value_label.configure(text=f"{total_tests:,}")
+        self.total_tests_card.value_label.configure(text=f"{total_tests:,}\n(V:{valid_count} A:{abnormal_count})")
         self.avg_cost_card.value_label.configure(text=f"${avg_cost:,.2f}")
         self.labs_card.value_label.configure(text=str(active_labs))
 
@@ -890,31 +911,50 @@ class SummaryFrame(ctk.CTkFrame):
             pass
         return None
 
-    def _show_cost_summary(self, invoices: List[Dict[str, Any]]):
+    def _show_cost_summary(self, valid_invoices: List[Dict[str, Any]], abnormal_invoices: List[Dict[str, Any]]):
         """Show total cost by test type and month."""
         self.summary_tree.delete(*self.summary_tree.get_children())
 
-        # Group by test type and month
-        data = {}
-        for inv in invoices:
-            test_type = inv.get('test_service_type', 'Unknown') or 'Unknown'
-            amount = float(inv.get('amount_usd', 0) or 0)
-            date_str = inv.get('invoice_date', '') or inv.get('request_date', '')
-            month = self._get_month_from_date(date_str)
+        def process_invoices(invoices, source_label):
+            """Process invoices and return grouped data."""
+            data = {}
+            for inv in invoices:
+                test_type = inv.get('test_service_type', 'Unknown') or 'Unknown'
+                amount = float(inv.get('amount_usd', 0) or 0)
+                date_str = inv.get('invoice_date', '') or inv.get('request_date', '')
+                month = self._get_month_from_date(date_str)
 
-            if test_type not in data:
-                data[test_type] = {m: 0 for m in range(1, 13)}
+                if test_type not in data:
+                    data[test_type] = {m: 0 for m in range(1, 13)}
 
-            if month:
-                data[test_type][month] += amount
+                if month:
+                    data[test_type][month] += amount
+            return data
 
-        # Add rows
+        # Process valid and abnormal separately
+        valid_data = process_invoices(valid_invoices, "Valid")
+        abnormal_data = process_invoices(abnormal_invoices, "Abnormal")
+
         grand_totals = {m: 0 for m in range(1, 13)}
-        for test_type in sorted(data.keys()):
-            row_data = [test_type]
+
+        # Add valid invoice rows first
+        for test_type in sorted(valid_data.keys()):
+            row_data = ["Valid", test_type]
             row_total = 0
             for m in range(1, 13):
-                val = data[test_type][m]
+                val = valid_data[test_type][m]
+                row_data.append(f"${val:,.0f}" if val > 0 else "-")
+                row_total += val
+                grand_totals[m] += val
+            row_data.append(f"${row_total:,.0f}")
+            self.summary_tree.insert('', 'end', values=row_data)
+
+        # Add abnormal invoice rows
+        for test_type in sorted(abnormal_data.keys()):
+            row_data = ["Abnormal", test_type]
+            row_total = 0
+            for m in range(1, 13):
+                val = abnormal_data[test_type][m]
                 row_data.append(f"${val:,.0f}" if val > 0 else "-")
                 row_total += val
                 grand_totals[m] += val
@@ -922,7 +962,7 @@ class SummaryFrame(ctk.CTkFrame):
             self.summary_tree.insert('', 'end', values=row_data)
 
         # Add grand total row
-        total_row = ["TOTAL"]
+        total_row = ["", "TOTAL"]
         grand_total = 0
         for m in range(1, 13):
             total_row.append(f"${grand_totals[m]:,.0f}" if grand_totals[m] > 0 else "-")
@@ -930,30 +970,49 @@ class SummaryFrame(ctk.CTkFrame):
         total_row.append(f"${grand_total:,.0f}")
         self.summary_tree.insert('', 'end', values=total_row, tags=('total',))
 
-    def _show_volume_summary(self, invoices: List[Dict[str, Any]]):
+    def _show_volume_summary(self, valid_invoices: List[Dict[str, Any]], abnormal_invoices: List[Dict[str, Any]]):
         """Show test volume by test type and month."""
         self.summary_tree.delete(*self.summary_tree.get_children())
 
-        # Group by test type and month
-        data = {}
-        for inv in invoices:
-            test_type = inv.get('test_service_type', 'Unknown') or 'Unknown'
-            date_str = inv.get('invoice_date', '') or inv.get('request_date', '')
-            month = self._get_month_from_date(date_str)
+        def process_invoices(invoices):
+            """Process invoices and return grouped data."""
+            data = {}
+            for inv in invoices:
+                test_type = inv.get('test_service_type', 'Unknown') or 'Unknown'
+                date_str = inv.get('invoice_date', '') or inv.get('request_date', '')
+                month = self._get_month_from_date(date_str)
 
-            if test_type not in data:
-                data[test_type] = {m: 0 for m in range(1, 13)}
+                if test_type not in data:
+                    data[test_type] = {m: 0 for m in range(1, 13)}
 
-            if month:
-                data[test_type][month] += 1
+                if month:
+                    data[test_type][month] += 1
+            return data
 
-        # Add rows
+        # Process valid and abnormal separately
+        valid_data = process_invoices(valid_invoices)
+        abnormal_data = process_invoices(abnormal_invoices)
+
         grand_totals = {m: 0 for m in range(1, 13)}
-        for test_type in sorted(data.keys()):
-            row_data = [test_type]
+
+        # Add valid invoice rows first
+        for test_type in sorted(valid_data.keys()):
+            row_data = ["Valid", test_type]
             row_total = 0
             for m in range(1, 13):
-                val = data[test_type][m]
+                val = valid_data[test_type][m]
+                row_data.append(str(val) if val > 0 else "-")
+                row_total += val
+                grand_totals[m] += val
+            row_data.append(str(row_total))
+            self.summary_tree.insert('', 'end', values=row_data)
+
+        # Add abnormal invoice rows
+        for test_type in sorted(abnormal_data.keys()):
+            row_data = ["Abnormal", test_type]
+            row_total = 0
+            for m in range(1, 13):
+                val = abnormal_data[test_type][m]
                 row_data.append(str(val) if val > 0 else "-")
                 row_total += val
                 grand_totals[m] += val
@@ -961,7 +1020,7 @@ class SummaryFrame(ctk.CTkFrame):
             self.summary_tree.insert('', 'end', values=row_data)
 
         # Add grand total row
-        total_row = ["TOTAL"]
+        total_row = ["", "TOTAL"]
         grand_total = 0
         for m in range(1, 13):
             total_row.append(str(grand_totals[m]) if grand_totals[m] > 0 else "-")
@@ -969,38 +1028,44 @@ class SummaryFrame(ctk.CTkFrame):
         total_row.append(str(grand_total))
         self.summary_tree.insert('', 'end', values=total_row, tags=('total',))
 
-    def _show_unit_cost_summary(self, invoices: List[Dict[str, Any]]):
+    def _show_unit_cost_summary(self, valid_invoices: List[Dict[str, Any]], abnormal_invoices: List[Dict[str, Any]]):
         """Show unit cost (avg cost per test) by test type and month."""
         self.summary_tree.delete(*self.summary_tree.get_children())
 
-        # Group by test type and month - need both cost and count
-        cost_data = {}
-        count_data = {}
-        for inv in invoices:
-            test_type = inv.get('test_service_type', 'Unknown') or 'Unknown'
-            amount = float(inv.get('amount_usd', 0) or 0)
-            date_str = inv.get('invoice_date', '') or inv.get('request_date', '')
-            month = self._get_month_from_date(date_str)
+        def process_invoices(invoices):
+            """Process invoices and return cost and count data."""
+            cost_data = {}
+            count_data = {}
+            for inv in invoices:
+                test_type = inv.get('test_service_type', 'Unknown') or 'Unknown'
+                amount = float(inv.get('amount_usd', 0) or 0)
+                date_str = inv.get('invoice_date', '') or inv.get('request_date', '')
+                month = self._get_month_from_date(date_str)
 
-            if test_type not in cost_data:
-                cost_data[test_type] = {m: 0 for m in range(1, 13)}
-                count_data[test_type] = {m: 0 for m in range(1, 13)}
+                if test_type not in cost_data:
+                    cost_data[test_type] = {m: 0 for m in range(1, 13)}
+                    count_data[test_type] = {m: 0 for m in range(1, 13)}
 
-            if month:
-                cost_data[test_type][month] += amount
-                count_data[test_type][month] += 1
+                if month:
+                    cost_data[test_type][month] += amount
+                    count_data[test_type][month] += 1
+            return cost_data, count_data
 
-        # Add rows
+        # Process valid and abnormal separately
+        valid_cost, valid_count = process_invoices(valid_invoices)
+        abnormal_cost, abnormal_count = process_invoices(abnormal_invoices)
+
         grand_costs = {m: 0 for m in range(1, 13)}
         grand_counts = {m: 0 for m in range(1, 13)}
 
-        for test_type in sorted(cost_data.keys()):
-            row_data = [test_type]
+        # Add valid invoice rows first
+        for test_type in sorted(valid_cost.keys()):
+            row_data = ["Valid", test_type]
             row_total_cost = 0
             row_total_count = 0
             for m in range(1, 13):
-                cost = cost_data[test_type][m]
-                count = count_data[test_type][m]
+                cost = valid_cost[test_type][m]
+                count = valid_count[test_type][m]
                 if count > 0:
                     unit_cost = cost / count
                     row_data.append(f"${unit_cost:,.0f}")
@@ -1011,7 +1076,30 @@ class SummaryFrame(ctk.CTkFrame):
                 grand_costs[m] += cost
                 grand_counts[m] += count
 
-            # Row total (avg)
+            if row_total_count > 0:
+                row_data.append(f"${row_total_cost / row_total_count:,.0f}")
+            else:
+                row_data.append("-")
+            self.summary_tree.insert('', 'end', values=row_data)
+
+        # Add abnormal invoice rows
+        for test_type in sorted(abnormal_cost.keys()):
+            row_data = ["Abnormal", test_type]
+            row_total_cost = 0
+            row_total_count = 0
+            for m in range(1, 13):
+                cost = abnormal_cost[test_type][m]
+                count = abnormal_count[test_type][m]
+                if count > 0:
+                    unit_cost = cost / count
+                    row_data.append(f"${unit_cost:,.0f}")
+                else:
+                    row_data.append("-")
+                row_total_cost += cost
+                row_total_count += count
+                grand_costs[m] += cost
+                grand_counts[m] += count
+
             if row_total_count > 0:
                 row_data.append(f"${row_total_cost / row_total_count:,.0f}")
             else:
@@ -1019,7 +1107,7 @@ class SummaryFrame(ctk.CTkFrame):
             self.summary_tree.insert('', 'end', values=row_data)
 
         # Add grand total row (overall averages)
-        total_row = ["TOTAL"]
+        total_row = ["", "TOTAL"]
         grand_total_cost = 0
         grand_total_count = 0
         for m in range(1, 13):
@@ -1036,31 +1124,50 @@ class SummaryFrame(ctk.CTkFrame):
             total_row.append("-")
         self.summary_tree.insert('', 'end', values=total_row, tags=('total',))
 
-    def _show_lab_summary(self, invoices: List[Dict[str, Any]]):
+    def _show_lab_summary(self, valid_invoices: List[Dict[str, Any]], abnormal_invoices: List[Dict[str, Any]]):
         """Show summary by lab."""
         self.summary_tree.delete(*self.summary_tree.get_children())
 
-        # Group by lab and month
-        data = {}
-        for inv in invoices:
-            lab = inv.get('lab_name', 'Unknown') or 'Unknown'
-            amount = float(inv.get('amount_usd', 0) or 0)
-            date_str = inv.get('invoice_date', '') or inv.get('request_date', '')
-            month = self._get_month_from_date(date_str)
+        def process_invoices(invoices):
+            """Process invoices and return grouped data."""
+            data = {}
+            for inv in invoices:
+                lab = inv.get('lab_name', 'Unknown') or 'Unknown'
+                amount = float(inv.get('amount_usd', 0) or 0)
+                date_str = inv.get('invoice_date', '') or inv.get('request_date', '')
+                month = self._get_month_from_date(date_str)
 
-            if lab not in data:
-                data[lab] = {m: 0 for m in range(1, 13)}
+                if lab not in data:
+                    data[lab] = {m: 0 for m in range(1, 13)}
 
-            if month:
-                data[lab][month] += amount
+                if month:
+                    data[lab][month] += amount
+            return data
 
-        # Add rows
+        # Process valid and abnormal separately
+        valid_data = process_invoices(valid_invoices)
+        abnormal_data = process_invoices(abnormal_invoices)
+
         grand_totals = {m: 0 for m in range(1, 13)}
-        for lab in sorted(data.keys()):
-            row_data = [lab]
+
+        # Add valid invoice rows first
+        for lab in sorted(valid_data.keys()):
+            row_data = ["Valid", lab]
             row_total = 0
             for m in range(1, 13):
-                val = data[lab][m]
+                val = valid_data[lab][m]
+                row_data.append(f"${val:,.0f}" if val > 0 else "-")
+                row_total += val
+                grand_totals[m] += val
+            row_data.append(f"${row_total:,.0f}")
+            self.summary_tree.insert('', 'end', values=row_data)
+
+        # Add abnormal invoice rows
+        for lab in sorted(abnormal_data.keys()):
+            row_data = ["Abnormal", lab]
+            row_total = 0
+            for m in range(1, 13):
+                val = abnormal_data[lab][m]
                 row_data.append(f"${val:,.0f}" if val > 0 else "-")
                 row_total += val
                 grand_totals[m] += val
@@ -1068,7 +1175,7 @@ class SummaryFrame(ctk.CTkFrame):
             self.summary_tree.insert('', 'end', values=row_data)
 
         # Add grand total row
-        total_row = ["TOTAL"]
+        total_row = ["", "TOTAL"]
         grand_total = 0
         for m in range(1, 13):
             total_row.append(f"${grand_totals[m]:,.0f}" if grand_totals[m] > 0 else "-")
