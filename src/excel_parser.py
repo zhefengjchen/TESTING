@@ -40,14 +40,25 @@ class ExcelParser:
         "AMOUNT (Currency=USD)": "amount_usd",
     }
 
-    # Rows to skip (subtotals, tax, etc.)
+    # Rows to skip (subtotals, tax, etc.) - case insensitive regex patterns
     SKIP_PATTERNS = [
+        r'^remit\s*payment\s*to',
         r'^subtotal',
         r'^tax\s*rate',
         r'^sales\s*tax',
         r'^freight',
         r'^total$',
         r'^grand\s*total',
+    ]
+
+    # Exact values to skip (case insensitive)
+    SKIP_VALUES = [
+        "REMIT PAYMENT TO:",
+        "SUBTOTAL",
+        "TAX RATE",
+        "SALES TAX",
+        "FREIGHT",
+        "TOTAL",
     ]
 
     # Sheet name to parse
@@ -177,6 +188,13 @@ class ExcelParser:
 
     def _should_skip_row(self, first_value: str) -> bool:
         """Check if a row should be skipped based on its first value."""
+        # Check exact values (case insensitive)
+        first_value_upper = first_value.strip().upper()
+        for skip_value in self.SKIP_VALUES:
+            if first_value_upper == skip_value.upper():
+                return True
+
+        # Check regex patterns (case insensitive)
         for pattern in self.SKIP_PATTERNS:
             if re.match(pattern, first_value, re.IGNORECASE):
                 return True
