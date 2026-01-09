@@ -1612,6 +1612,7 @@ class MainApplication(ctk.CTk):
             return
 
         selected_ids = table.get_selected_ids()
+        selected_records = table.get_selected_records()
 
         if len(selected_ids) < 2:
             messagebox.showwarning("Warning", "Please select at least 2 records for bulk edit.\n"
@@ -1623,19 +1624,53 @@ class MainApplication(ctk.CTk):
         result = dialog.get_result()
 
         if result:
-            # Apply changes to all selected records
-            success_count = 0
-            for record_id in selected_ids:
-                if self.current_tab == "invoices":
+            if self.current_tab == "invoices":
+                # For valid invoices, just update
+                success_count = 0
+                for record_id in selected_ids:
                     if self.database.update_invoice(record_id, result):
                         success_count += 1
-                else:
-                    if self.database.update_abnormal_invoice(record_id, result):
-                        success_count += 1
+                self._refresh_data()
+                self._update_status(f"Bulk edit: {success_count} records updated")
+                messagebox.showinfo("Success", f"Successfully updated {success_count} records.")
+            else:
+                # For abnormal items, update and re-validate each record
+                test_types = self.database.get_test_types()
+                validator = DataValidator(test_types)
 
-            self._refresh_data()
-            self._update_status(f"Bulk edit: {success_count} records updated")
-            messagebox.showinfo("Success", f"Successfully updated {success_count} records.")
+                updated_count = 0
+                moved_count = 0
+
+                for record in selected_records:
+                    record_id = record.get('id')
+
+                    # Merge the bulk edit changes into the record
+                    updated_record = dict(record)
+                    updated_record.update(result)
+
+                    # Re-validate
+                    is_valid, errors = validator.validate_record(updated_record)
+
+                    if is_valid:
+                        # Move to valid invoices
+                        insert_data = {k: v for k, v in updated_record.items() if k not in ('id', 'validation_error', '_source')}
+                        self.database.insert_invoice(insert_data)
+                        self.database.delete_abnormal_invoice(record_id)
+                        moved_count += 1
+                    else:
+                        # Update in abnormal with new validation error
+                        updated_record['validation_error'] = "; ".join(errors)
+                        self.database.update_abnormal_invoice(record_id, updated_record)
+                        updated_count += 1
+
+                self._refresh_data()
+                self._update_status(f"Bulk edit: {updated_count} updated, {moved_count} moved to Valid")
+                messagebox.showinfo(
+                    "Bulk Edit Complete",
+                    f"Results:\n"
+                    f"- {moved_count} records passed validation and moved to Valid Invoices\n"
+                    f"- {updated_count} records updated (still abnormal)"
+                )
 
     def _bulk_delete(self):
         """Bulk delete multiple selected rows."""
