@@ -1448,11 +1448,33 @@ class MainApplication(ctk.CTk):
             record_id = result.get('id')
             if self.current_tab == "invoices":
                 self.database.update_invoice(record_id, result)
+                self._refresh_data()
+                self._update_status(f"Record {record_id} updated")
             else:
-                self.database.update_abnormal_invoice(record_id, result)
+                # Re-validate abnormal item after edit
+                test_types = self.database.get_test_types()
+                validator = DataValidator(test_types)
+                is_valid, errors = validator.validate_record(result)
 
-            self._refresh_data()
-            self._update_status(f"Record {record_id} updated")
+                if is_valid:
+                    # Item now passes validation - move to valid invoices
+                    # Remove the 'id' field for insertion
+                    insert_data = {k: v for k, v in result.items() if k != 'id'}
+                    new_id = self.database.insert_invoice(insert_data)
+                    self.database.delete_abnormal_invoice(record_id)
+                    self._refresh_data()
+                    self._update_status(f"Record moved to Valid Invoices (new ID: {new_id})")
+                    messagebox.showinfo(
+                        "Validation Passed",
+                        f"Record passed validation and has been moved to Valid Invoices.\n"
+                        f"New Invoice ID: {new_id}"
+                    )
+                else:
+                    # Still invalid - update with new validation error
+                    result['validation_error'] = "; ".join(errors)
+                    self.database.update_abnormal_invoice(record_id, result)
+                    self._refresh_data()
+                    self._update_status(f"Record {record_id} updated (still abnormal)")
 
     def _delete_row(self):
         """Delete the selected row."""
