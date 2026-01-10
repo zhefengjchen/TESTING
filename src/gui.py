@@ -845,10 +845,11 @@ class SummaryFrame(ctk.CTkFrame):
     MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-    def __init__(self, parent, database: Database, **kwargs):
+    def __init__(self, parent, database: Database, ipc_database: PsiDatabase, **kwargs):
         super().__init__(parent, **kwargs)
 
         self.database = database
+        self.ipc_database = ipc_database
         self.current_year = datetime.now().year
         self.current_view = "cost"  # cost, volume, unit_cost, by_lab, lab_detail
         self.selected_lab = "All"
@@ -1056,6 +1057,8 @@ class SummaryFrame(ctk.CTkFrame):
 
         # Get both valid and abnormal invoices
         valid_invoices = self.database.get_all_invoices()
+        ipc_invoices = self.ipc_database.get_all_inspections()
+        valid_invoices.extend(ipc_invoices)
         abnormal_invoices = self.database.get_all_abnormal_invoices()
 
         # Add source indicator to each record
@@ -1632,6 +1635,7 @@ class MainApplication(ctk.CTk):
 
         # Initialize database
         self.database = Database()
+        self.ipc_database = PsiDatabase()
 
         # Current state
         self.current_tab = "invoices"
@@ -1812,7 +1816,7 @@ class MainApplication(ctk.CTk):
 
     def _create_summary_tab(self):
         """Create the summary/analytics tab."""
-        self.summary_frame = SummaryFrame(self.content_container, self.database)
+        self.summary_frame = SummaryFrame(self.content_container, self.database, self.ipc_database)
 
     def _create_status_bar(self):
         """Create the status bar."""
@@ -1934,11 +1938,9 @@ class MainApplication(ctk.CTk):
 
         inspection_count = 0
         if inspection_records:
-            psi_db = PsiDatabase()
             for record in inspection_records:
-                psi_db.insert_inspection(record)
+                self.ipc_database.insert_inspection(record)
                 inspection_count += 1
-            psi_db.close()
 
         # Show summary
         messagebox.showinfo(
@@ -2052,7 +2054,13 @@ class MainApplication(ctk.CTk):
         if result:
             record_id = result.get('id')
             if self.current_tab == "invoices":
-                self.database.update_invoice(record_id, result)
+                record_source = self.selected_record.get('_source', 'invoice')
+                ipc_record_id = self.selected_record.get('record_id')
+                if record_source == "ipc":
+                    result['id'] = ipc_record_id
+                    self.ipc_database.update_inspection(ipc_record_id, result)
+                else:
+                    self.database.update_invoice(record_id, result)
                 self._refresh_data()
                 self._update_status(f"Record {record_id} updated")
             else:
@@ -2090,7 +2098,12 @@ class MainApplication(ctk.CTk):
         record_id = self.selected_record.get('id')
         if messagebox.askyesno("Confirm", f"Delete record {record_id}?"):
             if self.current_tab == "invoices":
-                self.database.delete_invoice(record_id)
+                record_source = self.selected_record.get('_source', 'invoice')
+                ipc_record_id = self.selected_record.get('record_id')
+                if record_source == "ipc":
+                    self.ipc_database.delete_inspection(ipc_record_id)
+                else:
+                    self.database.delete_invoice(record_id)
             else:
                 self.database.delete_abnormal_invoice(record_id)
 
@@ -2125,9 +2138,16 @@ class MainApplication(ctk.CTk):
             if self.current_tab == "invoices":
                 # For valid invoices, just update
                 success_count = 0
-                for record_id in selected_ids:
-                    if self.database.update_invoice(record_id, result):
-                        success_count += 1
+                for record in selected_records:
+                    record_id = record.get('id')
+                    record_source = record.get('_source', 'invoice')
+                    ipc_record_id = record.get('record_id')
+                    if record_source == "ipc":
+                        if self.ipc_database.update_inspection(ipc_record_id, result):
+                            success_count += 1
+                    else:
+                        if self.database.update_invoice(record_id, result):
+                            success_count += 1
                 self._refresh_data()
                 self._update_status(f"Bulk edit: {success_count} records updated")
                 messagebox.showinfo("Success", f"Successfully updated {success_count} records.")
@@ -2196,10 +2216,17 @@ class MainApplication(ctk.CTk):
 
         # Delete all selected records
         success_count = 0
-        for record_id in selected_ids:
+        for record in table.get_selected_records():
+            record_id = record.get('id')
+            record_source = record.get('_source', 'invoice')
+            ipc_record_id = record.get('record_id')
             if self.current_tab == "invoices":
-                if self.database.delete_invoice(record_id):
-                    success_count += 1
+                if record_source == "ipc":
+                    if self.ipc_database.delete_inspection(ipc_record_id):
+                        success_count += 1
+                else:
+                    if self.database.delete_invoice(record_id):
+                        success_count += 1
             else:
                 if self.database.delete_abnormal_invoice(record_id):
                     success_count += 1
@@ -2209,9 +2236,22 @@ class MainApplication(ctk.CTk):
         self._update_status(f"Bulk delete: {success_count} records deleted")
         messagebox.showinfo("Success", f"Successfully deleted {success_count} records.")
 
+    def _decorate_ipc_records(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Add IPC metadata for display/editing in the invoices table."""
+        decorated = []
+        for record in records:
+            ipc_record = dict(record)
+            ipc_record['_source'] = 'ipc'
+            ipc_record['record_id'] = ipc_record.get('id')
+            ipc_record['id'] = f"IPC-{ipc_record.get('id')}"
+            decorated.append(ipc_record)
+        return decorated
+
     def _refresh_data(self):
         """Refresh all data tables."""
         invoices = self.database.get_all_invoices()
+        ipc_invoices = self._decorate_ipc_records(self.ipc_database.get_all_inspections())
+        invoices.extend(ipc_invoices)
         self.invoices_table.load_data(invoices)
 
         abnormal = self.database.get_all_abnormal_invoices()
@@ -2224,6 +2264,8 @@ class MainApplication(ctk.CTk):
         """Handle filter application."""
         if any(filters.values()):
             results = self.database.search_invoices(filters)
+            ipc_results = self._decorate_ipc_records(self.ipc_database.search_inspections(filters))
+            results.extend(ipc_results)
             self.invoices_table.load_data(results)
             self._update_status(f"Filter applied: {len(results)} records found")
         else:

@@ -503,6 +503,77 @@ class PsiDatabase:
         self.conn.commit()
         return cursor.lastrowid
 
+    def get_all_inspections(self) -> List[Dict[str, Any]]:
+        """Get all inspection records."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM psi_inspections ORDER BY id DESC")
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    def update_inspection(self, inspection_id: int, data: Dict[str, Any]) -> bool:
+        """Update an inspection record."""
+        cursor = self.conn.cursor()
+        set_clauses = []
+        values = []
+
+        for key, value in data.items():
+            if key not in ('id', 'created_at'):
+                set_clauses.append(f"{key} = ?")
+                values.append(value)
+
+        set_clauses.append("updated_at = ?")
+        values.append(datetime.now().isoformat())
+        values.append(inspection_id)
+
+        query = f"UPDATE psi_inspections SET {', '.join(set_clauses)} WHERE id = ?"
+        cursor.execute(query, values)
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def delete_inspection(self, inspection_id: int) -> bool:
+        """Delete an inspection record."""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM psi_inspections WHERE id = ?", (inspection_id,))
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def search_inspections(self, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Search inspection records with filters."""
+        cursor = self.conn.cursor()
+
+        query = "SELECT * FROM psi_inspections WHERE 1=1"
+        params = []
+
+        if filters.get('lab_name'):
+            query += " AND lab_name = ?"
+            params.append(filters['lab_name'])
+
+        if filters.get('date_from'):
+            query += " AND invoice_date >= ?"
+            params.append(filters['date_from'])
+
+        if filters.get('date_to'):
+            query += " AND invoice_date <= ?"
+            params.append(filters['date_to'])
+
+        if filters.get('search_text'):
+            search_term = f"%{filters['search_text']}%"
+            query += """ AND (
+                inspection_id LIKE ? OR
+                factory_id LIKE ? OR
+                amazon_tracker_number LIKE ? OR
+                factory_name LIKE ? OR
+                product_description LIKE ? OR
+                invoice_number LIKE ? OR
+                report_number LIKE ?
+            )"""
+            params.extend([search_term] * 7)
+
+        query += " ORDER BY id DESC"
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
     def close(self):
         """Close database connection."""
         if self.conn:
