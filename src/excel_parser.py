@@ -40,6 +40,29 @@ class ExcelParser:
         "AMOUNT (Currency=USD)": "amount_usd",
     }
 
+    INSPECTION_HEADER_MAPPING = {
+        "Inspection ID": "inspection_id",
+        "Factory ID": "factory_id",
+        "Amazon Tracker Number": "amazon_tracker_number",
+        "Factory Name": "factory_name",
+        "Product Description": "product_description",
+        "Manday": "manday",
+        "Test / Service Type": "test_service_type",
+        "Quotation/Order Number": "quotation_order_number",
+        "Request Date": "request_date",
+        "Test Start Date": "test_start_date",
+        "Report Delivered Date": "report_delivered_date",
+        "Report number": "report_number",
+        "Test / inspection Location": "test_inspection_location",
+        "Product line": "product_line",
+        "AMAZON QUALITY MANAGER": "amazon_quality_manager",
+        "AMAZON SOURCING MANAGER": "amazon_sourcing_manager",
+        "Invoice #": "invoice_number",
+        "Lab contact": "lab_contact",
+        "COMMENT (IF ANY)": "comment",
+        "AMOUNT (Currency=USD)": "amount_usd",
+    }
+
     # Rows to skip (subtotals, tax, etc.) - case insensitive regex patterns
     SKIP_PATTERNS = [
         r'^remit\s*payment\s*to',
@@ -63,6 +86,7 @@ class ExcelParser:
 
     # Sheet name to parse
     TARGET_SHEET = "TESTING+SERVICES"
+    INSPECTION_SHEET = "INSPECTION"
 
     def __init__(self, lab_names: List[str] = None):
         """Initialize the parser with known lab names."""
@@ -121,6 +145,49 @@ class ExcelParser:
         workbook.close()
         return records, lab_name, None
 
+    def parse_inspection_file(
+        self,
+        file_path: str,
+        invoice_date: str = None
+    ) -> Tuple[List[Dict[str, Any]], Optional[str], Optional[str]]:
+        """
+        Parse an Excel file and extract inspection data.
+
+        Args:
+            file_path: Path to the Excel file
+            invoice_date: Optional invoice date to add to all records
+
+        Returns:
+            Tuple of (list of inspection records, detected lab name, error message if any)
+        """
+        filename = os.path.basename(file_path)
+        lab_name = self.detect_lab_name(filename)
+
+        try:
+            workbook = load_workbook(file_path, data_only=True)
+        except Exception as e:
+            return [], lab_name, f"Failed to open Excel file: {str(e)}"
+
+        sheet = None
+        for sheet_name in workbook.sheetnames:
+            if sheet_name.upper() == self.INSPECTION_SHEET.upper():
+                sheet = workbook[sheet_name]
+                break
+
+        if sheet is None:
+            for sheet_name in workbook.sheetnames:
+                if self.INSPECTION_SHEET.upper() in sheet_name.upper():
+                    sheet = workbook[sheet_name]
+                    break
+
+        if sheet is None:
+            workbook.close()
+            return [], lab_name, None
+
+        records = self._parse_inspection_sheet(sheet, lab_name, invoice_date)
+        workbook.close()
+        return records, lab_name, None
+
     def _parse_sheet(self, sheet: Worksheet, lab_name: Optional[str], invoice_date: Optional[str]) -> List[Dict[str, Any]]:
         """Parse a worksheet and extract invoice records."""
         records = []
@@ -129,6 +196,8 @@ class ExcelParser:
         header_row_idx = None
         header_mapping = {}
 
+        normalized_header_mapping = self._normalized_header_mapping(self.HEADER_MAPPING)
+
         for row_idx, row in enumerate(sheet.iter_rows(min_row=1, max_row=50), start=1):
             row_values = [cell.value for cell in row]
 
@@ -136,10 +205,10 @@ class ExcelParser:
             matching_headers = 0
             for col_idx, cell_value in enumerate(row_values):
                 if cell_value and isinstance(cell_value, str):
-                    cell_value_stripped = cell_value.strip()
-                    if cell_value_stripped in self.HEADER_MAPPING:
+                    cell_value_stripped = self._normalize_header(cell_value)
+                    if cell_value_stripped in normalized_header_mapping:
                         matching_headers += 1
-                        header_mapping[col_idx] = self.HEADER_MAPPING[cell_value_stripped]
+                        header_mapping[col_idx] = normalized_header_mapping[cell_value_stripped]
 
             # If we found enough headers, this is our header row
             if matching_headers >= 5:  # At least 5 matching headers
@@ -186,6 +255,74 @@ class ExcelParser:
 
         return records
 
+    def _parse_inspection_sheet(
+        self,
+        sheet: Worksheet,
+        lab_name: Optional[str],
+        invoice_date: Optional[str]
+    ) -> List[Dict[str, Any]]:
+        """Parse a worksheet and extract inspection records."""
+        records = []
+        header_row_idx = None
+        header_mapping = {}
+        normalized_header_mapping = self._normalized_header_mapping(self.INSPECTION_HEADER_MAPPING)
+
+        for row_idx, row in enumerate(sheet.iter_rows(min_row=1, max_row=50), start=1):
+            row_values = [cell.value for cell in row]
+            matching_headers = 0
+            for col_idx, cell_value in enumerate(row_values):
+                if cell_value and isinstance(cell_value, str):
+                    cell_value_stripped = self._normalize_header(cell_value)
+                    if cell_value_stripped in normalized_header_mapping:
+                        matching_headers += 1
+                        header_mapping[col_idx] = normalized_header_mapping[cell_value_stripped]
+
+            if matching_headers >= 5:
+                header_row_idx = row_idx
+                break
+
+        if header_row_idx is None:
+            return records
+
+        for row in sheet.iter_rows(min_row=header_row_idx + 1):
+            row_values = [cell.value for cell in row]
+            if all(v is None or (isinstance(v, str) and v.strip() == '') for v in row_values):
+                continue
+
+            first_non_empty = None
+            for v in row_values:
+                if v is not None and (not isinstance(v, str) or v.strip() != ''):
+                    first_non_empty = str(v).strip().lower()
+                    break
+
+            if first_non_empty and self._should_skip_row(first_non_empty):
+                continue
+
+            record = {}
+            for col_idx, db_column in header_mapping.items():
+                if col_idx < len(row_values):
+                    value = row_values[col_idx]
+                    record[db_column] = self._format_value(value, db_column)
+
+            record['test_service_type'] = 'PSI'
+            record['lab_name'] = lab_name or ''
+            record['invoice_date'] = invoice_date or ''
+
+            amount_value = record.get('amount_usd', 0)
+            if not amount_value or float(amount_value) <= 0:
+                continue
+
+            raw_amount = record.get('amount_usd', '')
+            if isinstance(raw_amount, str) and self._should_skip_row(raw_amount.strip().lower()):
+                continue
+
+            if not self._has_meaningful_inspection_data(record):
+                continue
+
+            records.append(record)
+
+        return records
+
     def _should_skip_row(self, first_value: str) -> bool:
         """Check if a row should be skipped based on its first value."""
         # Check exact values (case insensitive)
@@ -199,6 +336,17 @@ class ExcelParser:
             if re.match(pattern, first_value, re.IGNORECASE):
                 return True
         return False
+
+    @staticmethod
+    def _normalize_header(value: Any) -> str:
+        """Normalize header cell values for matching."""
+        if value is None:
+            return ""
+        return re.sub(r"\s+", " ", str(value)).strip()
+
+    def _normalized_header_mapping(self, mapping: Dict[str, str]) -> Dict[str, str]:
+        """Return a mapping with normalized keys for header matching."""
+        return {self._normalize_header(key): value for key, value in mapping.items()}
 
     def _format_value(self, value: Any, column_name: str) -> Any:
         """Format a cell value based on the column type."""
@@ -244,6 +392,26 @@ class ExcelParser:
                 return True
 
         # Also check if there's an amount
+        amount = record.get('amount_usd', 0)
+        if amount and float(amount) > 0:
+            return True
+
+        return False
+
+    def _has_meaningful_inspection_data(self, record: Dict[str, Any]) -> bool:
+        """Check if an inspection record has meaningful data."""
+        key_fields = [
+            'inspection_id',
+            'factory_id',
+            'amazon_tracker_number',
+            'invoice_number',
+        ]
+
+        for field in key_fields:
+            value = record.get(field, '')
+            if value and str(value).strip():
+                return True
+
         amount = record.get('amount_usd', 0)
         if amount and float(amount) > 0:
             return True

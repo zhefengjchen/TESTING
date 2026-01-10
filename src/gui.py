@@ -15,7 +15,7 @@ from datetime import datetime
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.database import Database
+from src.database import Database, PsiDatabase
 from src.excel_parser import ExcelParser, DataValidator
 
 
@@ -1774,9 +1774,14 @@ class MainApplication(ctk.CTk):
         lab_names = self.database.get_lab_names()
         parser = ExcelParser(lab_names)
         records, detected_lab, error = parser.parse_file(file_path, invoice_date)
+        inspection_records, _, inspection_error = parser.parse_inspection_file(file_path, invoice_date)
 
         if error:
             messagebox.showerror("Error", error)
+            return
+
+        if inspection_error:
+            messagebox.showerror("Error", inspection_error)
             return
 
         if not detected_lab:
@@ -1786,7 +1791,7 @@ class MainApplication(ctk.CTk):
                 "Records will be imported without lab name."
             )
 
-        if not records:
+        if not records and not inspection_records:
             messagebox.showinfo("Info", "No valid records found in the file.")
             return
 
@@ -1803,15 +1808,27 @@ class MainApplication(ctk.CTk):
         for record, error_msg in invalid_records:
             self.database.insert_abnormal_invoice(record, error_msg)
 
+        inspection_count = 0
+        if inspection_records:
+            psi_db = PsiDatabase()
+            for record in inspection_records:
+                psi_db.insert_inspection(record)
+                inspection_count += 1
+            psi_db.close()
+
         # Show summary
         messagebox.showinfo(
             "Import Complete",
             f"Successfully imported {len(valid_records)} valid records.\n"
-            f"{len(invalid_records)} records moved to Abnormal Items."
+            f"{len(invalid_records)} records moved to Abnormal Items.\n"
+            f"{inspection_count} PSI inspection records saved."
         )
 
         self._refresh_data()
-        self._update_status(f"Imported {len(records)} records from {os.path.basename(file_path)}")
+        self._update_status(
+            f"Imported {len(records)} records from {os.path.basename(file_path)} "
+            f"({inspection_count} PSI inspections)"
+        )
 
     def _ask_invoice_date(self, default_date: Optional[str] = None) -> str:
         """Ask user for invoice date."""

@@ -76,6 +76,7 @@ class Database:
     # Default database directory for Windows
     DEFAULT_DB_DIR = r"C:\Amazon\AI\CODING PROJECT\INVOICE MANAGEMENT SYSTEM\invoice database"
     DEFAULT_DB_PATH = os.path.join(DEFAULT_DB_DIR, "invoices.db")
+    PSI_DB_PATH = os.path.join(DEFAULT_DB_DIR, "psi.db")
 
     def __init__(self, db_path: str = None):
         """Initialize database connection."""
@@ -397,6 +398,110 @@ class Database:
         cursor.execute("DELETE FROM test_types WHERE name = ?", (name,))
         self.conn.commit()
         return cursor.rowcount > 0
+
+    def close(self):
+        """Close database connection."""
+        if self.conn:
+            self.conn.close()
+
+
+class PsiDatabase:
+    """SQLite database handler for PSI inspection data."""
+
+    PSI_COLUMNS = [
+        "id",
+        "inspection_id",
+        "factory_id",
+        "amazon_tracker_number",
+        "factory_name",
+        "product_description",
+        "manday",
+        "test_service_type",
+        "quotation_order_number",
+        "request_date",
+        "test_start_date",
+        "report_delivered_date",
+        "report_number",
+        "test_inspection_location",
+        "product_line",
+        "amazon_quality_manager",
+        "amazon_sourcing_manager",
+        "invoice_number",
+        "lab_contact",
+        "comment",
+        "amount_usd",
+        "lab_name",
+        "invoice_date",
+        "created_at",
+        "updated_at"
+    ]
+
+    def __init__(self, db_path: str = None):
+        """Initialize database connection."""
+        if db_path is None:
+            db_path = Database.PSI_DB_PATH
+        self.db_path = db_path
+        self._ensure_db_directory()
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        self._create_tables()
+
+    def _ensure_db_directory(self):
+        """Ensure the database directory exists."""
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir)
+
+    def _create_tables(self):
+        """Create PSI inspection tables."""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS psi_inspections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                inspection_id TEXT,
+                factory_id TEXT,
+                amazon_tracker_number TEXT,
+                factory_name TEXT,
+                product_description TEXT,
+                manday TEXT,
+                test_service_type TEXT,
+                quotation_order_number TEXT,
+                request_date TEXT,
+                test_start_date TEXT,
+                report_delivered_date TEXT,
+                report_number TEXT,
+                test_inspection_location TEXT,
+                product_line TEXT,
+                amazon_quality_manager TEXT,
+                amazon_sourcing_manager TEXT,
+                invoice_number TEXT,
+                lab_contact TEXT,
+                comment TEXT,
+                amount_usd REAL,
+                lab_name TEXT,
+                invoice_date TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        self.conn.commit()
+
+    def insert_inspection(self, data: Dict[str, Any]) -> int:
+        """Insert a new inspection record."""
+        cursor = self.conn.cursor()
+        columns = [col for col in self.PSI_COLUMNS if col not in ('id', 'created_at', 'updated_at')]
+        placeholders = ', '.join(['?' for _ in columns])
+        column_names = ', '.join(columns)
+
+        values = [data.get(col, '') for col in columns]
+
+        cursor.execute(f"""
+            INSERT INTO psi_inspections ({column_names})
+            VALUES ({placeholders})
+        """, values)
+
+        self.conn.commit()
+        return cursor.lastrowid
 
     def close(self):
         """Close database connection."""
