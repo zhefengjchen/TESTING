@@ -86,7 +86,7 @@ class ExcelParser:
 
     # Sheet name to parse
     TARGET_SHEET = "TESTING+SERVICES"
-    INSPECTION_SHEET = "Inspection"
+    INSPECTION_SHEET = "IPC"
 
     def __init__(self, lab_names: List[str] = None):
         """Initialize the parser with known lab names."""
@@ -338,7 +338,7 @@ class ExcelParser:
                     value = row_values[col_idx]
                     record[db_column] = self._format_value(value, db_column)
 
-            record['test_service_type'] = 'PSI'
+            record['test_service_type'] = 'IPC'
             record['lab_name'] = lab_name or ''
             record['invoice_date'] = invoice_date or ''
 
