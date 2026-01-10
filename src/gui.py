@@ -1226,7 +1226,7 @@ class SummaryFrame(ctk.CTkFrame):
         self.summary_tree.insert('', 'end', values=total_row, tags=('total',))
 
     def _show_lab_detail_summary(self, valid_invoices: List[Dict[str, Any]], abnormal_invoices: List[Dict[str, Any]]):
-        """Show detailed summary with all metrics (Cost, Volume, Unit Cost) by test type."""
+        """Show detailed summary with all metrics (Cost, Volume, Unit Cost) by lab and test type."""
         # Reconfigure the treeview for lab detail view
         # Destroy and recreate with different columns
         for widget in self.table_frame.winfo_children():
@@ -1244,8 +1244,8 @@ class SummaryFrame(ctk.CTkFrame):
                        foreground="white",
                        relief="flat")
 
-        # Columns for lab detail view: Source, Test Type, Total Cost, Number of Tests, Unit Cost
-        columns = ["source", "test_type", "total_cost", "num_tests", "unit_cost"]
+        # Columns for lab detail view: Source, Lab, Test Type, Total Cost, Number of Tests, Unit Cost
+        columns = ["source", "lab", "test_type", "total_cost", "num_tests", "unit_cost"]
 
         self.summary_tree = ttk.Treeview(
             self.table_frame,
@@ -1258,8 +1258,11 @@ class SummaryFrame(ctk.CTkFrame):
         self.summary_tree.heading("source", text="Source", anchor="w")
         self.summary_tree.column("source", width=80, minwidth=60, anchor="w")
 
+        self.summary_tree.heading("lab", text="Lab", anchor="w")
+        self.summary_tree.column("lab", width=180, minwidth=120, anchor="w")
+
         self.summary_tree.heading("test_type", text="Test/Service Type", anchor="w")
-        self.summary_tree.column("test_type", width=250, minwidth=150, anchor="w")
+        self.summary_tree.column("test_type", width=220, minwidth=150, anchor="w")
 
         self.summary_tree.heading("total_cost", text="Total Cost (USD)", anchor="e")
         self.summary_tree.column("total_cost", width=150, minwidth=100, anchor="e")
@@ -1284,17 +1287,20 @@ class SummaryFrame(ctk.CTkFrame):
         self.table_frame.grid_columnconfigure(0, weight=1)
 
         def process_invoices(invoices):
-            """Process invoices and return cost and count by test type."""
+            """Process invoices and return cost and count by lab and test type."""
             data = {}
             for inv in invoices:
+                lab = inv.get('lab_name', 'Unknown') or 'Unknown'
                 test_type = inv.get('test_service_type', 'Unknown') or 'Unknown'
                 amount = float(inv.get('amount_usd', 0) or 0)
 
-                if test_type not in data:
-                    data[test_type] = {'cost': 0, 'count': 0}
+                if lab not in data:
+                    data[lab] = {}
+                if test_type not in data[lab]:
+                    data[lab][test_type] = {'cost': 0, 'count': 0}
 
-                data[test_type]['cost'] += amount
-                data[test_type]['count'] += 1
+                data[lab][test_type]['cost'] += amount
+                data[lab][test_type]['count'] += 1
             return data
 
         # Process valid and abnormal separately
@@ -1305,42 +1311,47 @@ class SummaryFrame(ctk.CTkFrame):
         grand_count = 0
 
         # Add valid invoice rows first
-        for test_type in sorted(valid_data.keys()):
-            cost = valid_data[test_type]['cost']
-            count = valid_data[test_type]['count']
-            unit_cost = cost / count if count > 0 else 0
+        for lab in sorted(valid_data.keys()):
+            for test_type in sorted(valid_data[lab].keys()):
+                cost = valid_data[lab][test_type]['cost']
+                count = valid_data[lab][test_type]['count']
+                unit_cost = cost / count if count > 0 else 0
 
-            row_data = [
-                "Valid",
-                test_type,
-                f"${cost:,.2f}",
-                str(count),
-                f"${unit_cost:,.2f}"
-            ]
-            self.summary_tree.insert('', 'end', values=row_data)
-            grand_cost += cost
-            grand_count += count
+                row_data = [
+                    "Valid",
+                    lab,
+                    test_type,
+                    f"${cost:,.2f}",
+                    str(count),
+                    f"${unit_cost:,.2f}"
+                ]
+                self.summary_tree.insert('', 'end', values=row_data)
+                grand_cost += cost
+                grand_count += count
 
         # Add abnormal invoice rows
-        for test_type in sorted(abnormal_data.keys()):
-            cost = abnormal_data[test_type]['cost']
-            count = abnormal_data[test_type]['count']
-            unit_cost = cost / count if count > 0 else 0
+        for lab in sorted(abnormal_data.keys()):
+            for test_type in sorted(abnormal_data[lab].keys()):
+                cost = abnormal_data[lab][test_type]['cost']
+                count = abnormal_data[lab][test_type]['count']
+                unit_cost = cost / count if count > 0 else 0
 
-            row_data = [
-                "Abnormal",
-                test_type,
-                f"${cost:,.2f}",
-                str(count),
-                f"${unit_cost:,.2f}"
-            ]
-            self.summary_tree.insert('', 'end', values=row_data)
-            grand_cost += cost
-            grand_count += count
+                row_data = [
+                    "Abnormal",
+                    lab,
+                    test_type,
+                    f"${cost:,.2f}",
+                    str(count),
+                    f"${unit_cost:,.2f}"
+                ]
+                self.summary_tree.insert('', 'end', values=row_data)
+                grand_cost += cost
+                grand_count += count
 
         # Add grand total row
         grand_unit_cost = grand_cost / grand_count if grand_count > 0 else 0
         total_row = [
+            "",
             "",
             "TOTAL",
             f"${grand_cost:,.2f}",
