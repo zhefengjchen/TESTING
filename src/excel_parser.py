@@ -256,7 +256,17 @@ class DataValidator:
 
     def __init__(self, allowed_test_types: List[str]):
         """Initialize validator with allowed test types."""
-        self.allowed_test_types = set(t.strip().lower() for t in allowed_test_types)
+        self.allowed_test_types = {
+            self._normalize_test_type(t) for t in allowed_test_types if t is not None
+        }
+
+    @staticmethod
+    def _normalize_test_type(value: str) -> str:
+        """Normalize test type values for comparison."""
+        if value is None:
+            return ""
+        normalized = re.sub(r"\s+", " ", str(value)).strip().lower()
+        return normalized
 
     def validate_record(self, record: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """
@@ -275,8 +285,8 @@ class DataValidator:
         # Check for invalid test type
         test_type = record.get('test_service_type', '')
         if test_type:
-            test_type_lower = str(test_type).strip().lower()
-            if test_type_lower and test_type_lower not in self.allowed_test_types:
+            test_type_normalized = self._normalize_test_type(test_type)
+            if test_type_normalized and test_type_normalized not in self.allowed_test_types:
                 errors.append(f"Invalid Test Type: {test_type}")
         else:
             # Empty test type is also invalid
