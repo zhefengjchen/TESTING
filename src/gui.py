@@ -19,8 +19,71 @@ from src.excel_parser import ExcelParser, DataValidator
 
 
 # Set appearance mode and default color theme
-ctk.set_appearance_mode("System")
+ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
+
+# Apple-inspired color palette
+PRIMARY_COLOR = ("#0A84FF", "#0A84FF")
+PRIMARY_HOVER = ("#409CFF", "#409CFF")
+SECONDARY_COLOR = ("#2C2C2E", "#2C2C2E")
+SECONDARY_HOVER = ("#3A3A3C", "#3A3A3C")
+SUCCESS_COLOR = ("#30D158", "#30D158")
+SUCCESS_HOVER = ("#34C759", "#34C759")
+DANGER_COLOR = ("#FF453A", "#FF453A")
+DANGER_HOVER = ("#FF6A5E", "#FF6A5E")
+PURPLE_COLOR = ("#BF5AF2", "#BF5AF2")
+PURPLE_HOVER = ("#D291FF", "#D291FF")
+ORANGE_COLOR = ("#FF9F0A", "#FF9F0A")
+ORANGE_HOVER = ("#FFB340", "#FFB340")
+
+APPLE_THEME = {
+    "light": {
+        "table_bg": "#FFFFFF",
+        "table_field": "#F5F5F7",
+        "table_text": "#1D1D1F",
+        "heading_bg": "#E5E5EA",
+        "heading_text": "#1D1D1F",
+        "table_select": "#0A84FF",
+        "listbox_bg": "#FFFFFF",
+        "listbox_text": "#1D1D1F",
+        "listbox_select": "#0A84FF",
+    },
+    "dark": {
+        "table_bg": "#1C1C1E",
+        "table_field": "#2C2C2E",
+        "table_text": "#F2F2F7",
+        "heading_bg": "#3A3A3C",
+        "heading_text": "#F2F2F7",
+        "table_select": "#0A84FF",
+        "listbox_bg": "#2C2C2E",
+        "listbox_text": "#F2F2F7",
+        "listbox_select": "#0A84FF",
+    },
+}
+
+
+def _current_theme() -> Dict[str, str]:
+    """Return the current light/dark palette based on appearance mode."""
+    return APPLE_THEME["dark"] if ctk.get_appearance_mode() == "Dark" else APPLE_THEME["light"]
+
+
+def _apply_treeview_style(style: ttk.Style, prefix: str = "Treeview") -> None:
+    """Apply Apple-inspired styles to ttk Treeviews."""
+    palette = _current_theme()
+    style.configure(
+        prefix,
+        background=palette["table_bg"],
+        foreground=palette["table_text"],
+        fieldbackground=palette["table_field"],
+        rowheight=25,
+    )
+    style.configure(
+        f"{prefix}.Heading",
+        background=palette["heading_bg"],
+        foreground=palette["heading_text"],
+        relief="flat",
+    )
+    style.map(prefix, background=[("selected", palette["table_select"])])
 
 
 class InvoiceTable(ctk.CTkFrame):
@@ -66,17 +129,7 @@ class InvoiceTable(ctk.CTkFrame):
         # Create treeview with style
         style = ttk.Style()
         style.theme_use("clam")
-        style.configure("Treeview",
-                       background="#2b2b2b",
-                       foreground="white",
-                       fieldbackground="#2b2b2b",
-                       rowheight=25)
-        style.configure("Treeview.Heading",
-                       background="#1f538d",
-                       foreground="white",
-                       relief="flat")
-        style.map("Treeview",
-                 background=[("selected", "#1f538d")])
+        _apply_treeview_style(style, "Treeview")
 
         self.tree = ttk.Treeview(
             self.tree_frame,
@@ -263,8 +316,14 @@ class EditDialog(ctk.CTkToplevel):
         save_btn = ctk.CTkButton(btn_frame, text="Save", command=self._on_save, width=100)
         save_btn.pack(side="right", padx=5)
 
-        cancel_btn = ctk.CTkButton(btn_frame, text="Cancel", command=self._on_cancel, width=100,
-                                   fg_color="gray", hover_color="darkgray")
+        cancel_btn = ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            command=self._on_cancel,
+            width=100,
+            fg_color=SECONDARY_COLOR,
+            hover_color=SECONDARY_HOVER,
+        )
         cancel_btn.pack(side="right", padx=5)
 
     def _on_save(self):
@@ -393,8 +452,8 @@ class BulkEditDialog(ctk.CTkToplevel):
             text="Apply to All Selected",
             command=self._on_apply,
             width=150,
-            fg_color="green",
-            hover_color="darkgreen"
+            fg_color=SUCCESS_COLOR,
+            hover_color=SUCCESS_HOVER,
         )
         apply_btn.pack(side="right", padx=5)
 
@@ -403,8 +462,8 @@ class BulkEditDialog(ctk.CTkToplevel):
             text="Cancel",
             command=self._on_cancel,
             width=100,
-            fg_color="gray",
-            hover_color="darkgray"
+            fg_color=SECONDARY_COLOR,
+            hover_color=SECONDARY_HOVER,
         )
         cancel_btn.pack(side="right", padx=5)
 
@@ -422,8 +481,8 @@ class BulkEditDialog(ctk.CTkToplevel):
             text="Deselect All",
             command=self._deselect_all,
             width=100,
-            fg_color="gray",
-            hover_color="darkgray"
+            fg_color=SECONDARY_COLOR,
+            hover_color=SECONDARY_HOVER,
         )
         deselect_all_btn.pack(side="left", padx=5)
 
@@ -521,8 +580,15 @@ class SettingsFrame(ctk.CTkFrame):
         list_frame = ctk.CTkFrame(self.labs_frame)
         list_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        self.labs_listbox = tk.Listbox(list_frame, height=15, font=("Arial", 12),
-                                       bg="#2b2b2b", fg="white", selectbackground="#1f538d")
+        palette = _current_theme()
+        self.labs_listbox = tk.Listbox(
+            list_frame,
+            height=15,
+            font=("Arial", 12),
+            bg=palette["listbox_bg"],
+            fg=palette["listbox_text"],
+            selectbackground=palette["listbox_select"],
+        )
         self.labs_listbox.pack(side="left", fill="both", expand=True)
 
         scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.labs_listbox.yview)
@@ -539,8 +605,14 @@ class SettingsFrame(ctk.CTkFrame):
         add_btn = ctk.CTkButton(btn_frame, text="Add", command=self._add_lab, width=80)
         add_btn.pack(side="left", padx=5)
 
-        delete_btn = ctk.CTkButton(btn_frame, text="Delete", command=self._delete_lab, width=80,
-                                   fg_color="red", hover_color="darkred")
+        delete_btn = ctk.CTkButton(
+            btn_frame,
+            text="Delete",
+            command=self._delete_lab,
+            width=80,
+            fg_color=DANGER_COLOR,
+            hover_color=DANGER_HOVER,
+        )
         delete_btn.pack(side="left", padx=5)
 
         self._refresh_labs()
@@ -553,8 +625,15 @@ class SettingsFrame(ctk.CTkFrame):
         list_frame = ctk.CTkFrame(self.tests_frame)
         list_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        self.tests_listbox = tk.Listbox(list_frame, height=15, font=("Arial", 12),
-                                        bg="#2b2b2b", fg="white", selectbackground="#1f538d")
+        palette = _current_theme()
+        self.tests_listbox = tk.Listbox(
+            list_frame,
+            height=15,
+            font=("Arial", 12),
+            bg=palette["listbox_bg"],
+            fg=palette["listbox_text"],
+            selectbackground=palette["listbox_select"],
+        )
         self.tests_listbox.pack(side="left", fill="both", expand=True)
 
         scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.tests_listbox.yview)
@@ -571,8 +650,14 @@ class SettingsFrame(ctk.CTkFrame):
         add_btn = ctk.CTkButton(btn_frame, text="Add", command=self._add_test, width=80)
         add_btn.pack(side="left", padx=5)
 
-        delete_btn = ctk.CTkButton(btn_frame, text="Delete", command=self._delete_test, width=80,
-                                   fg_color="red", hover_color="darkred")
+        delete_btn = ctk.CTkButton(
+            btn_frame,
+            text="Delete",
+            command=self._delete_test,
+            width=80,
+            fg_color=DANGER_COLOR,
+            hover_color=DANGER_HOVER,
+        )
         delete_btn.pack(side="left", padx=5)
 
         self._refresh_tests()
@@ -584,12 +669,12 @@ class SettingsFrame(ctk.CTkFrame):
 
         if tab == "labs":
             self.labs_frame.pack(fill="both", expand=True)
-            self.lab_btn.configure(fg_color=("#3B8ED0", "#1F6AA5"))
-            self.test_btn.configure(fg_color="gray")
+            self.lab_btn.configure(fg_color=PRIMARY_COLOR, hover_color=PRIMARY_HOVER)
+            self.test_btn.configure(fg_color=SECONDARY_COLOR, hover_color=SECONDARY_HOVER)
         else:
             self.tests_frame.pack(fill="both", expand=True)
-            self.test_btn.configure(fg_color=("#3B8ED0", "#1F6AA5"))
-            self.lab_btn.configure(fg_color="gray")
+            self.test_btn.configure(fg_color=PRIMARY_COLOR, hover_color=PRIMARY_HOVER)
+            self.lab_btn.configure(fg_color=SECONDARY_COLOR, hover_color=SECONDARY_HOVER)
 
     def _refresh_labs(self):
         """Refresh the lab names list."""
@@ -731,9 +816,13 @@ class SummaryFrame(ctk.CTkFrame):
         self.view_buttons["by_lab"] = lab_btn
 
         # New: Lab Detail view - shows all metrics for selected lab
-        lab_detail_btn = ctk.CTkButton(view_frame, text="Lab Detail",
-                                       command=lambda: self._switch_view("lab_detail"),
-                                       fg_color="#6B4C9A", hover_color="#4A3570")
+        lab_detail_btn = ctk.CTkButton(
+            view_frame,
+            text="Lab Detail",
+            command=lambda: self._switch_view("lab_detail"),
+            fg_color=PURPLE_COLOR,
+            hover_color=PURPLE_HOVER,
+        )
         lab_detail_btn.pack(side="left", padx=5)
         self.view_buttons["lab_detail"] = lab_detail_btn
 
@@ -753,19 +842,19 @@ class SummaryFrame(ctk.CTkFrame):
         cards_frame.pack(fill="x", padx=10, pady=10)
 
         # Total Cost Card
-        self.total_cost_card = self._create_card(cards_frame, "Total Cost", "$0.00", "#1f538d")
+        self.total_cost_card = self._create_card(cards_frame, "Total Cost", "$0.00", PRIMARY_COLOR)
         self.total_cost_card.pack(side="left", padx=10, expand=True, fill="x")
 
         # Total Tests Card
-        self.total_tests_card = self._create_card(cards_frame, "Total Tests", "0", "#2d7d46")
+        self.total_tests_card = self._create_card(cards_frame, "Total Tests", "0", SUCCESS_COLOR)
         self.total_tests_card.pack(side="left", padx=10, expand=True, fill="x")
 
         # Avg Cost Card
-        self.avg_cost_card = self._create_card(cards_frame, "Avg Cost/Test", "$0.00", "#6B4C9A")
+        self.avg_cost_card = self._create_card(cards_frame, "Avg Cost/Test", "$0.00", PURPLE_COLOR)
         self.avg_cost_card.pack(side="left", padx=10, expand=True, fill="x")
 
         # Active Labs Card
-        self.labs_card = self._create_card(cards_frame, "Active Labs", "0", "#b8860b")
+        self.labs_card = self._create_card(cards_frame, "Active Labs", "0", ORANGE_COLOR)
         self.labs_card.pack(side="left", padx=10, expand=True, fill="x")
 
     def _create_card(self, parent, title: str, value: str, color: str) -> ctk.CTkFrame:
@@ -787,15 +876,7 @@ class SummaryFrame(ctk.CTkFrame):
         """Create the summary data table."""
         # Create treeview with style
         style = ttk.Style()
-        style.configure("Summary.Treeview",
-                       background="#2b2b2b",
-                       foreground="white",
-                       fieldbackground="#2b2b2b",
-                       rowheight=25)
-        style.configure("Summary.Treeview.Heading",
-                       background="#1f538d",
-                       foreground="white",
-                       relief="flat")
+        _apply_treeview_style(style, "Summary.Treeview")
 
         # Columns: Source + Test Type + 12 months + Total
         columns = ["source", "test_type"] + self.MONTHS + ["Total"]
@@ -849,11 +930,11 @@ class SummaryFrame(ctk.CTkFrame):
         for v, btn in self.view_buttons.items():
             if v == view:
                 if v == "lab_detail":
-                    btn.configure(fg_color=("#6B4C9A", "#4A3570"))
+                    btn.configure(fg_color=PURPLE_COLOR, hover_color=PURPLE_HOVER)
                 else:
-                    btn.configure(fg_color=("#3B8ED0", "#1F6AA5"))
+                    btn.configure(fg_color=PRIMARY_COLOR, hover_color=PRIMARY_HOVER)
             else:
-                btn.configure(fg_color="gray")
+                btn.configure(fg_color=SECONDARY_COLOR, hover_color=SECONDARY_HOVER)
 
         self.refresh_data()
 
@@ -1234,15 +1315,7 @@ class SummaryFrame(ctk.CTkFrame):
 
         # Create treeview with style
         style = ttk.Style()
-        style.configure("Summary.Treeview",
-                       background="#2b2b2b",
-                       foreground="white",
-                       fieldbackground="#2b2b2b",
-                       rowheight=25)
-        style.configure("Summary.Treeview.Heading",
-                       background="#1f538d",
-                       foreground="white",
-                       relief="flat")
+        _apply_treeview_style(style, "Summary.Treeview")
 
         # Columns for lab detail view: Source, Lab, Test Type, Total Cost, Number of Tests, Unit Cost
         columns = ["source", "lab", "test_type", "total_cost", "num_tests", "unit_cost"]
@@ -1410,8 +1483,14 @@ class FilterFrame(ctk.CTkFrame):
         filter_btn = ctk.CTkButton(btn_frame, text="Apply Filter", command=self._apply_filter, width=100)
         filter_btn.pack(side="left", padx=5)
 
-        clear_btn = ctk.CTkButton(btn_frame, text="Clear", command=self._clear_filter, width=80,
-                                  fg_color="gray", hover_color="darkgray")
+        clear_btn = ctk.CTkButton(
+            btn_frame,
+            text="Clear",
+            command=self._clear_filter,
+            width=80,
+            fg_color=SECONDARY_COLOR,
+            hover_color=SECONDARY_HOVER,
+        )
         clear_btn.pack(side="left", padx=5)
 
     def _apply_filter(self):
@@ -1491,8 +1570,14 @@ class MainApplication(ctk.CTk):
         edit_btn.pack(side="left", padx=5, pady=5)
 
         # Delete button
-        delete_btn = ctk.CTkButton(toolbar, text="🗑️ Delete", command=self._delete_row, width=80,
-                                   fg_color="red", hover_color="darkred")
+        delete_btn = ctk.CTkButton(
+            toolbar,
+            text="🗑️ Delete",
+            command=self._delete_row,
+            width=80,
+            fg_color=DANGER_COLOR,
+            hover_color=DANGER_HOVER,
+        )
         delete_btn.pack(side="left", padx=5, pady=5)
 
         # Separator
@@ -1500,13 +1585,25 @@ class MainApplication(ctk.CTk):
         separator.pack(side="left", padx=2, pady=5)
 
         # Bulk Edit button
-        bulk_edit_btn = ctk.CTkButton(toolbar, text="📝 Bulk Edit", command=self._bulk_edit, width=100,
-                                      fg_color="#6B4C9A", hover_color="#4A3570")
+        bulk_edit_btn = ctk.CTkButton(
+            toolbar,
+            text="📝 Bulk Edit",
+            command=self._bulk_edit,
+            width=100,
+            fg_color=PURPLE_COLOR,
+            hover_color=PURPLE_HOVER,
+        )
         bulk_edit_btn.pack(side="left", padx=5, pady=5)
 
         # Bulk Delete button
-        bulk_delete_btn = ctk.CTkButton(toolbar, text="🗑️ Bulk Delete", command=self._bulk_delete, width=110,
-                                        fg_color="#8B0000", hover_color="#5C0000")
+        bulk_delete_btn = ctk.CTkButton(
+            toolbar,
+            text="🗑️ Bulk Delete",
+            command=self._bulk_delete,
+            width=110,
+            fg_color=DANGER_COLOR,
+            hover_color=DANGER_HOVER,
+        )
         bulk_delete_btn.pack(side="left", padx=5, pady=5)
 
         # Refresh button
@@ -1514,8 +1611,14 @@ class MainApplication(ctk.CTk):
         refresh_btn.pack(side="left", padx=5, pady=5)
 
         # Export button
-        export_btn = ctk.CTkButton(toolbar, text="📊 Export", command=self._export_data, width=100,
-                                   fg_color="green", hover_color="darkgreen")
+        export_btn = ctk.CTkButton(
+            toolbar,
+            text="📊 Export",
+            command=self._export_data,
+            width=100,
+            fg_color=SUCCESS_COLOR,
+            hover_color=SUCCESS_HOVER,
+        )
         export_btn.pack(side="right", padx=5, pady=5)
 
     def _create_main_content(self):
@@ -1541,9 +1644,13 @@ class MainApplication(ctk.CTk):
         settings_btn.pack(side="left", padx=5)
         self.tab_buttons["settings"] = settings_btn
 
-        summary_btn = ctk.CTkButton(tab_frame, text="Summary",
-                                    command=lambda: self._switch_tab("summary"),
-                                    fg_color="#2d7d46", hover_color="#1d5d30")
+        summary_btn = ctk.CTkButton(
+            tab_frame,
+            text="Summary",
+            command=lambda: self._switch_tab("summary"),
+            fg_color=SUCCESS_COLOR,
+            hover_color=SUCCESS_HOVER,
+        )
         summary_btn.pack(side="left", padx=5)
         self.tab_buttons["summary"] = summary_btn
 
@@ -1622,23 +1729,23 @@ class MainApplication(ctk.CTk):
 
         # Reset button colors
         for btn in self.tab_buttons.values():
-            btn.configure(fg_color="gray")
+            btn.configure(fg_color=SECONDARY_COLOR, hover_color=SECONDARY_HOVER)
 
         # Show selected frame and highlight button
         self.current_tab = tab
         if tab == "invoices":
             self.invoices_frame.pack(fill="both", expand=True)
-            self.tab_buttons["invoices"].configure(fg_color=("#3B8ED0", "#1F6AA5"))
+            self.tab_buttons["invoices"].configure(fg_color=PRIMARY_COLOR, hover_color=PRIMARY_HOVER)
         elif tab == "abnormal":
             self.abnormal_frame.pack(fill="both", expand=True)
-            self.tab_buttons["abnormal"].configure(fg_color=("#3B8ED0", "#1F6AA5"))
+            self.tab_buttons["abnormal"].configure(fg_color=PRIMARY_COLOR, hover_color=PRIMARY_HOVER)
         elif tab == "settings":
             self.settings_frame.pack(fill="both", expand=True)
-            self.tab_buttons["settings"].configure(fg_color=("#3B8ED0", "#1F6AA5"))
+            self.tab_buttons["settings"].configure(fg_color=PRIMARY_COLOR, hover_color=PRIMARY_HOVER)
         elif tab == "summary":
             self.summary_frame.pack(fill="both", expand=True)
             self.summary_frame.refresh_data()  # Refresh data when switching to summary
-            self.tab_buttons["summary"].configure(fg_color=("#2d7d46", "#1d5d30"))
+            self.tab_buttons["summary"].configure(fg_color=SUCCESS_COLOR, hover_color=SUCCESS_HOVER)
 
     def _upload_invoice(self):
         """Handle invoice file upload."""
