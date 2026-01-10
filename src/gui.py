@@ -75,12 +75,14 @@ def _apply_treeview_style(style: ttk.Style, prefix: str = "Treeview") -> None:
         background=palette["table_bg"],
         foreground=palette["table_text"],
         fieldbackground=palette["table_field"],
-        rowheight=25,
+        font=("Arial", 13),
+        rowheight=28,
     )
     style.configure(
         f"{prefix}.Heading",
         background=palette["heading_bg"],
         foreground=palette["heading_text"],
+        font=("Arial", 13, "bold"),
         relief="flat",
     )
     style.map(prefix, background=[("selected", palette["table_select"])])
@@ -93,13 +95,19 @@ class InvoiceTable(ctk.CTkFrame):
     DISPLAY_COLUMNS = [
         ("id", "ID", 50),
         ("lab_name", "Lab", 60),
+        ("test_service_type", "Test Type", 150),
+        ("amount_usd", "Amount (USD)", 100),
+        ("invoice_date", "Invoice Date", 100),
+        ("amazon_quality_manager", "Amazon Quality Manager", 180),
+        ("product_description", "Product Description", 200),
+        ("request_date", "Request Date", 120),
+        ("test_start_date", "Test Start Date", 120),
+        ("report_delivered_date", "Report Delivered Date", 140),
+        ("test_inspection_location", "Test/Inspection Location", 180),
         ("tajan_bidding_tracking_number", "Tracking #", 150),
         ("amazon_test_request", "Test Request", 120),
         ("asin", "ASIN", 100),
-        ("test_service_type", "Test Type", 150),
         ("invoice_number", "Invoice #", 100),
-        ("amount_usd", "Amount (USD)", 100),
-        ("invoice_date", "Invoice Date", 100),
         ("report_number", "Report #", 120),
     ]
 
