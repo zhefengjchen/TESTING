@@ -1872,7 +1872,7 @@ class MainApplication(ctk.CTk):
             "DEC": 12, "DECEMBER": 12,
         }
         month_pattern = r"\b(JAN|JANUARY|FEB|FEBRUARY|MAR|MARCH|APR|APRIL|MAY|JUN|JUNE|JUL|JULY|AUG|AUGUST|SEP|SEPT|SEPTEMBER|OCT|OCTOBER|NOV|NOVEMBER|DEC|DECEMBER)\b"
-        year_pattern = r"\b(20\\d{2}|\\d{2})\b"
+        year_pattern = r"(20\d{2})"
 
         month_match = re.search(month_pattern, name, re.IGNORECASE)
         if not month_match:
@@ -1884,6 +1884,9 @@ class MainApplication(ctk.CTk):
             return None
 
         year_matches = list(re.finditer(year_pattern, name))
+        fallback_pattern = r"\b(\d{2})\b"
+        if not year_matches:
+            year_matches = list(re.finditer(fallback_pattern, name))
         if not year_matches:
             return None
 
