@@ -19,22 +19,22 @@ from src.excel_parser import ExcelParser, DataValidator
 
 
 # Set appearance mode and default color theme
-ctk.set_appearance_mode("System")
+ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
 # Apple-inspired color palette
 PRIMARY_COLOR = ("#0A84FF", "#0A84FF")
 PRIMARY_HOVER = ("#409CFF", "#409CFF")
-SECONDARY_COLOR = ("#D1D1D6", "#3A3A3C")
-SECONDARY_HOVER = ("#B0B0B5", "#48484A")
-SUCCESS_COLOR = ("#34C759", "#30D158")
-SUCCESS_HOVER = ("#4CD964", "#34C759")
-DANGER_COLOR = ("#FF3B30", "#FF453A")
+SECONDARY_COLOR = ("#2C2C2E", "#2C2C2E")
+SECONDARY_HOVER = ("#3A3A3C", "#3A3A3C")
+SUCCESS_COLOR = ("#30D158", "#30D158")
+SUCCESS_HOVER = ("#34C759", "#34C759")
+DANGER_COLOR = ("#FF453A", "#FF453A")
 DANGER_HOVER = ("#FF6A5E", "#FF6A5E")
-PURPLE_COLOR = ("#AF52DE", "#BF5AF2")
-PURPLE_HOVER = ("#C17BEE", "#D291FF")
-ORANGE_COLOR = ("#FF9F0A", "#FFD60A")
-ORANGE_HOVER = ("#FFB340", "#FFE680")
+PURPLE_COLOR = ("#BF5AF2", "#BF5AF2")
+PURPLE_HOVER = ("#D291FF", "#D291FF")
+ORANGE_COLOR = ("#FF9F0A", "#FF9F0A")
+ORANGE_HOVER = ("#FFB340", "#FFB340")
 
 APPLE_THEME = {
     "light": {
