@@ -665,7 +665,8 @@ class SummaryFrame(ctk.CTkFrame):
 
         self.database = database
         self.current_year = datetime.now().year
-        self.current_view = "cost"  # cost, volume, unit_cost
+        self.current_view = "cost"  # cost, volume, unit_cost, by_lab, lab_detail
+        self.selected_lab = "All"
 
         self._create_widgets()
 
@@ -689,6 +690,14 @@ class SummaryFrame(ctk.CTkFrame):
                                           command=self._on_year_change)
         self.year_combo.set(str(self.current_year))
         self.year_combo.pack(side="left", padx=5)
+
+        # Lab selector
+        ctk.CTkLabel(year_frame, text="Lab:").pack(side="left", padx=(20, 5))
+        lab_names = ["All"] + self.database.get_lab_names()
+        self.lab_combo = ctk.CTkComboBox(year_frame, values=lab_names, width=120,
+                                         command=self._on_lab_change)
+        self.lab_combo.set("All")
+        self.lab_combo.pack(side="left", padx=5)
 
         # Refresh button
         refresh_btn = ctk.CTkButton(year_frame, text="Refresh",
@@ -720,6 +729,13 @@ class SummaryFrame(ctk.CTkFrame):
                                 command=lambda: self._switch_view("by_lab"))
         lab_btn.pack(side="left", padx=5)
         self.view_buttons["by_lab"] = lab_btn
+
+        # New: Lab Detail view - shows all metrics for selected lab
+        lab_detail_btn = ctk.CTkButton(view_frame, text="Lab Detail",
+                                       command=lambda: self._switch_view("lab_detail"),
+                                       fg_color="#6B4C9A", hover_color="#4A3570")
+        lab_detail_btn.pack(side="left", padx=5)
+        self.view_buttons["lab_detail"] = lab_detail_btn
 
         # Summary statistics cards
         self._create_stats_cards()
@@ -820,12 +836,22 @@ class SummaryFrame(ctk.CTkFrame):
 
     def _switch_view(self, view: str):
         """Switch between different summary views."""
+        previous_view = self.current_view
         self.current_view = view
+
+        # If switching from lab_detail to another view, recreate the monthly table
+        if previous_view == "lab_detail" and view != "lab_detail":
+            for widget in self.table_frame.winfo_children():
+                widget.destroy()
+            self._create_summary_table()
 
         # Update button colors
         for v, btn in self.view_buttons.items():
             if v == view:
-                btn.configure(fg_color=("#3B8ED0", "#1F6AA5"))
+                if v == "lab_detail":
+                    btn.configure(fg_color=("#6B4C9A", "#4A3570"))
+                else:
+                    btn.configure(fg_color=("#3B8ED0", "#1F6AA5"))
             else:
                 btn.configure(fg_color="gray")
 
@@ -836,8 +862,17 @@ class SummaryFrame(ctk.CTkFrame):
         self.current_year = int(value)
         self.refresh_data()
 
+    def _on_lab_change(self, value):
+        """Handle lab selection change."""
+        self.selected_lab = value
+        self.refresh_data()
+
     def refresh_data(self):
         """Refresh summary data."""
+        # Update lab combo values
+        lab_names = ["All"] + self.database.get_lab_names()
+        self.lab_combo.configure(values=lab_names)
+
         # Get both valid and abnormal invoices
         valid_invoices = self.database.get_all_invoices()
         abnormal_invoices = self.database.get_all_abnormal_invoices()
@@ -862,6 +897,11 @@ class SummaryFrame(ctk.CTkFrame):
             if inv_date and str(self.current_year) in str(inv_date)[:4]:
                 year_abnormal.append(inv)
 
+        # Filter by lab if selected
+        if self.selected_lab != "All":
+            year_valid = [inv for inv in year_valid if inv.get('lab_name') == self.selected_lab]
+            year_abnormal = [inv for inv in year_abnormal if inv.get('lab_name') == self.selected_lab]
+
         # Combine for statistics (all invoices)
         all_year_invoices = year_valid + year_abnormal
 
@@ -877,6 +917,8 @@ class SummaryFrame(ctk.CTkFrame):
             self._show_unit_cost_summary(year_valid, year_abnormal)
         elif self.current_view == "by_lab":
             self._show_lab_summary(year_valid, year_abnormal)
+        elif self.current_view == "lab_detail":
+            self._show_lab_detail_summary(year_valid, year_abnormal)
 
     def _update_stats_cards(self, invoices: List[Dict[str, Any]], valid_count: int = 0, abnormal_count: int = 0):
         """Update the statistics cards."""
@@ -1181,6 +1223,130 @@ class SummaryFrame(ctk.CTkFrame):
             total_row.append(f"${grand_totals[m]:,.0f}" if grand_totals[m] > 0 else "-")
             grand_total += grand_totals[m]
         total_row.append(f"${grand_total:,.0f}")
+        self.summary_tree.insert('', 'end', values=total_row, tags=('total',))
+
+    def _show_lab_detail_summary(self, valid_invoices: List[Dict[str, Any]], abnormal_invoices: List[Dict[str, Any]]):
+        """Show detailed summary with all metrics (Cost, Volume, Unit Cost) by test type."""
+        # Reconfigure the treeview for lab detail view
+        # Destroy and recreate with different columns
+        for widget in self.table_frame.winfo_children():
+            widget.destroy()
+
+        # Create treeview with style
+        style = ttk.Style()
+        style.configure("Summary.Treeview",
+                       background="#2b2b2b",
+                       foreground="white",
+                       fieldbackground="#2b2b2b",
+                       rowheight=25)
+        style.configure("Summary.Treeview.Heading",
+                       background="#1f538d",
+                       foreground="white",
+                       relief="flat")
+
+        # Columns for lab detail view: Source, Test Type, Total Cost, Number of Tests, Unit Cost
+        columns = ["source", "test_type", "total_cost", "num_tests", "unit_cost"]
+
+        self.summary_tree = ttk.Treeview(
+            self.table_frame,
+            columns=columns,
+            show="headings",
+            style="Summary.Treeview"
+        )
+
+        # Configure columns
+        self.summary_tree.heading("source", text="Source", anchor="w")
+        self.summary_tree.column("source", width=80, minwidth=60, anchor="w")
+
+        self.summary_tree.heading("test_type", text="Test/Service Type", anchor="w")
+        self.summary_tree.column("test_type", width=250, minwidth=150, anchor="w")
+
+        self.summary_tree.heading("total_cost", text="Total Cost (USD)", anchor="e")
+        self.summary_tree.column("total_cost", width=150, minwidth=100, anchor="e")
+
+        self.summary_tree.heading("num_tests", text="Number of Tests", anchor="e")
+        self.summary_tree.column("num_tests", width=120, minwidth=80, anchor="e")
+
+        self.summary_tree.heading("unit_cost", text="Unit Cost (USD)", anchor="e")
+        self.summary_tree.column("unit_cost", width=120, minwidth=80, anchor="e")
+
+        # Scrollbars
+        vsb = ttk.Scrollbar(self.table_frame, orient="vertical", command=self.summary_tree.yview)
+        hsb = ttk.Scrollbar(self.table_frame, orient="horizontal", command=self.summary_tree.xview)
+        self.summary_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
+        # Grid layout
+        self.summary_tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
+
+        self.table_frame.grid_rowconfigure(0, weight=1)
+        self.table_frame.grid_columnconfigure(0, weight=1)
+
+        def process_invoices(invoices):
+            """Process invoices and return cost and count by test type."""
+            data = {}
+            for inv in invoices:
+                test_type = inv.get('test_service_type', 'Unknown') or 'Unknown'
+                amount = float(inv.get('amount_usd', 0) or 0)
+
+                if test_type not in data:
+                    data[test_type] = {'cost': 0, 'count': 0}
+
+                data[test_type]['cost'] += amount
+                data[test_type]['count'] += 1
+            return data
+
+        # Process valid and abnormal separately
+        valid_data = process_invoices(valid_invoices)
+        abnormal_data = process_invoices(abnormal_invoices)
+
+        grand_cost = 0
+        grand_count = 0
+
+        # Add valid invoice rows first
+        for test_type in sorted(valid_data.keys()):
+            cost = valid_data[test_type]['cost']
+            count = valid_data[test_type]['count']
+            unit_cost = cost / count if count > 0 else 0
+
+            row_data = [
+                "Valid",
+                test_type,
+                f"${cost:,.2f}",
+                str(count),
+                f"${unit_cost:,.2f}"
+            ]
+            self.summary_tree.insert('', 'end', values=row_data)
+            grand_cost += cost
+            grand_count += count
+
+        # Add abnormal invoice rows
+        for test_type in sorted(abnormal_data.keys()):
+            cost = abnormal_data[test_type]['cost']
+            count = abnormal_data[test_type]['count']
+            unit_cost = cost / count if count > 0 else 0
+
+            row_data = [
+                "Abnormal",
+                test_type,
+                f"${cost:,.2f}",
+                str(count),
+                f"${unit_cost:,.2f}"
+            ]
+            self.summary_tree.insert('', 'end', values=row_data)
+            grand_cost += cost
+            grand_count += count
+
+        # Add grand total row
+        grand_unit_cost = grand_cost / grand_count if grand_count > 0 else 0
+        total_row = [
+            "",
+            "TOTAL",
+            f"${grand_cost:,.2f}",
+            str(grand_count),
+            f"${grand_unit_cost:,.2f}"
+        ]
         self.summary_tree.insert('', 'end', values=total_row, tags=('total',))
 
 
