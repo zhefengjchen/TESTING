@@ -86,7 +86,7 @@ class ExcelParser:
 
     # Sheet name to parse
     TARGET_SHEET = "TESTING+SERVICES"
-    INSPECTION_SHEET = "INSPECTION"
+    INSPECTION_SHEET = "Inspection"
 
     def __init__(self, lab_names: List[str] = None):
         """Initialize the parser with known lab names."""
@@ -103,7 +103,12 @@ class ExcelParser:
                 return lab.upper()
         return None
 
-    def parse_file(self, file_path: str, invoice_date: str = None) -> Tuple[List[Dict[str, Any]], Optional[str], Optional[str]]:
+    def parse_file(
+        self,
+        file_path: str,
+        invoice_date: str = None,
+        sheet_name: Optional[str] = None
+    ) -> Tuple[List[Dict[str, Any]], Optional[str], Optional[str]]:
         """
         Parse an Excel file and extract invoice data.
 
@@ -122,22 +127,14 @@ class ExcelParser:
         except Exception as e:
             return [], lab_name, f"Failed to open Excel file: {str(e)}"
 
-        # Find the TESTING+SERVICES sheet
-        sheet = None
-        for sheet_name in workbook.sheetnames:
-            if sheet_name.upper() == self.TARGET_SHEET.upper():
-                sheet = workbook[sheet_name]
-                break
+        target_name = sheet_name or self.TARGET_SHEET
+        match_name = self._find_sheet_name(workbook, target_name)
+        sheet = workbook[match_name] if match_name else None
 
         if sheet is None:
-            # Try to find a sheet containing the target name
-            for sheet_name in workbook.sheetnames:
-                if self.TARGET_SHEET.upper() in sheet_name.upper():
-                    sheet = workbook[sheet_name]
-                    break
-
-        if sheet is None:
-            return [], lab_name, f"Sheet '{self.TARGET_SHEET}' not found. Available sheets: {', '.join(workbook.sheetnames)}"
+            return [], lab_name, (
+                f"Sheet '{target_name}' not found. Available sheets: {', '.join(workbook.sheetnames)}"
+            )
 
         # Parse the sheet
         records = self._parse_sheet(sheet, lab_name, invoice_date)
@@ -148,7 +145,9 @@ class ExcelParser:
     def parse_inspection_file(
         self,
         file_path: str,
-        invoice_date: str = None
+        invoice_date: str = None,
+        sheet_name: Optional[str] = None,
+        required: bool = False
     ) -> Tuple[List[Dict[str, Any]], Optional[str], Optional[str]]:
         """
         Parse an Excel file and extract inspection data.
@@ -168,25 +167,60 @@ class ExcelParser:
         except Exception as e:
             return [], lab_name, f"Failed to open Excel file: {str(e)}"
 
-        sheet = None
-        for sheet_name in workbook.sheetnames:
-            if sheet_name.upper() == self.INSPECTION_SHEET.upper():
-                sheet = workbook[sheet_name]
-                break
-
-        if sheet is None:
-            for sheet_name in workbook.sheetnames:
-                if self.INSPECTION_SHEET.upper() in sheet_name.upper():
-                    sheet = workbook[sheet_name]
-                    break
+        target_name = sheet_name or self.INSPECTION_SHEET
+        match_name = self._find_sheet_name(workbook, target_name)
+        sheet = workbook[match_name] if match_name else None
 
         if sheet is None:
             workbook.close()
+            if required or sheet_name:
+                return [], lab_name, (
+                    f"Sheet '{target_name}' not found. Available sheets: {', '.join(workbook.sheetnames)}"
+                )
             return [], lab_name, None
 
         records = self._parse_inspection_sheet(sheet, lab_name, invoice_date)
         workbook.close()
         return records, lab_name, None
+
+    def get_available_tabs(
+        self,
+        file_path: str
+    ) -> Tuple[Dict[str, str], Optional[str], Optional[str], List[str]]:
+        """Return available target tabs and the sheet names they map to."""
+        filename = os.path.basename(file_path)
+        lab_name = self.detect_lab_name(filename)
+
+        try:
+            workbook = load_workbook(file_path, data_only=True)
+        except Exception as e:
+            return {}, lab_name, f"Failed to open Excel file: {str(e)}", []
+
+        available_tabs = {}
+        testing_sheet = self._find_sheet_name(workbook, self.TARGET_SHEET)
+        if testing_sheet:
+            available_tabs[self.TARGET_SHEET] = testing_sheet
+
+        inspection_sheet = self._find_sheet_name(workbook, self.INSPECTION_SHEET)
+        if inspection_sheet:
+            available_tabs[self.INSPECTION_SHEET] = inspection_sheet
+
+        sheetnames = list(workbook.sheetnames)
+        workbook.close()
+        return available_tabs, lab_name, None, sheetnames
+
+    @staticmethod
+    def _find_sheet_name(workbook, target_name: str) -> Optional[str]:
+        """Find a sheet name by case-insensitive exact or partial match."""
+        for sheet_name in workbook.sheetnames:
+            if sheet_name.upper() == target_name.upper():
+                return sheet_name
+
+        for sheet_name in workbook.sheetnames:
+            if target_name.upper() in sheet_name.upper():
+                return sheet_name
+
+        return None
 
     def _parse_sheet(self, sheet: Worksheet, lab_name: Optional[str], invoice_date: Optional[str]) -> List[Dict[str, Any]]:
         """Parse a worksheet and extract invoice records."""
