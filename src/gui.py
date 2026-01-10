@@ -1872,7 +1872,7 @@ class MainApplication(ctk.CTk):
         if not available_tabs:
             messagebox.showerror(
                 "Error",
-                "No supported tabs found. Expected 'TESTING+SERVICES' or 'Inspection'.\n"
+                "No supported tabs found. Expected 'TESTING+SERVICES' or 'IPC'.\n"
                 f"Available sheets: {', '.join(sheetnames)}"
             )
             return
@@ -1945,13 +1945,13 @@ class MainApplication(ctk.CTk):
             "Import Complete",
             f"Successfully imported {len(valid_records)} valid records.\n"
             f"{len(invalid_records)} records moved to Abnormal Items.\n"
-            f"{inspection_count} PSI inspection records saved."
+            f"{inspection_count} IPC inspection records saved."
         )
 
         self._refresh_data()
         self._update_status(
             f"Imported {len(records)} records from {os.path.basename(file_path)} "
-            f"({inspection_count} PSI inspections)"
+            f"({inspection_count} IPC inspections)"
         )
 
     def _ask_invoice_date(self, default_date: Optional[str] = None) -> str:
