@@ -5,6 +5,7 @@ Uses CustomTkinter for modern UI.
 
 import os
 import sys
+import re
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, ttk
 import tkinter as tk
@@ -1766,7 +1767,8 @@ class MainApplication(ctk.CTk):
             return
 
         # Ask for invoice date
-        invoice_date = self._ask_invoice_date()
+        suggested_date = self._infer_invoice_date_from_filename(file_path)
+        invoice_date = self._ask_invoice_date(suggested_date)
 
         # Parse the file
         lab_names = self.database.get_lab_names()
@@ -1811,14 +1813,74 @@ class MainApplication(ctk.CTk):
         self._refresh_data()
         self._update_status(f"Imported {len(records)} records from {os.path.basename(file_path)}")
 
-    def _ask_invoice_date(self) -> str:
+    def _ask_invoice_date(self, default_date: Optional[str] = None) -> str:
         """Ask user for invoice date."""
         dialog = ctk.CTkInputDialog(
             text="Enter invoice date (YYYY-MM-DD):\nLeave empty to skip.",
             title="Invoice Date"
         )
+        if default_date:
+            self._prefill_dialog_entry(dialog, default_date)
         result = dialog.get_input()
         return result if result else ""
+
+    def _prefill_dialog_entry(self, dialog: ctk.CTkInputDialog, default_value: str) -> None:
+        """Prefill the CTkInputDialog entry with a default value."""
+        def try_insert():
+            entry = getattr(dialog, "_entry", None)
+            if entry is None:
+                dialog.after(50, try_insert)
+                return
+            entry.delete(0, "end")
+            entry.insert(0, default_value)
+
+        dialog.after(50, try_insert)
+
+    def _infer_invoice_date_from_filename(self, file_path: str) -> Optional[str]:
+        """Infer a YYYY-MM-DD invoice date from the filename, if possible."""
+        filename = os.path.basename(file_path)
+        name = os.path.splitext(filename)[0]
+        month_map = {
+            "JAN": 1, "JANUARY": 1,
+            "FEB": 2, "FEBRUARY": 2,
+            "MAR": 3, "MARCH": 3,
+            "APR": 4, "APRIL": 4,
+            "MAY": 5,
+            "JUN": 6, "JUNE": 6,
+            "JUL": 7, "JULY": 7,
+            "AUG": 8, "AUGUST": 8,
+            "SEP": 9, "SEPT": 9, "SEPTEMBER": 9,
+            "OCT": 10, "OCTOBER": 10,
+            "NOV": 11, "NOVEMBER": 11,
+            "DEC": 12, "DECEMBER": 12,
+        }
+        month_pattern = r"\b(JAN|JANUARY|FEB|FEBRUARY|MAR|MARCH|APR|APRIL|MAY|JUN|JUNE|JUL|JULY|AUG|AUGUST|SEP|SEPT|SEPTEMBER|OCT|OCTOBER|NOV|NOVEMBER|DEC|DECEMBER)\b"
+        year_pattern = r"\b(20\\d{2}|\\d{2})\b"
+
+        month_match = re.search(month_pattern, name, re.IGNORECASE)
+        if not month_match:
+            return None
+
+        month_key = month_match.group(1).upper()
+        month = month_map.get(month_key)
+        if not month:
+            return None
+
+        year_matches = list(re.finditer(year_pattern, name))
+        if not year_matches:
+            return None
+
+        month_pos = (month_match.start() + month_match.end()) / 2
+        closest_year = min(year_matches, key=lambda m: abs(((m.start() + m.end()) / 2) - month_pos))
+        year_str = closest_year.group(1)
+        year = int(year_str)
+        if year < 100:
+            year += 2000
+
+        try:
+            return datetime(year, month, 20).strftime("%Y-%m-%d")
+        except ValueError:
+            return None
 
     def _add_row(self):
         """Add a new invoice row."""
