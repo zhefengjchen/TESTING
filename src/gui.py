@@ -540,6 +540,97 @@ class BulkEditDialog(ctk.CTkToplevel):
         return self.result
 
 
+class TabSelectionDialog(ctk.CTkToplevel):
+    """Dialog for selecting which Excel tabs to upload."""
+
+    def __init__(self, parent, available_tabs: List[str]):
+        super().__init__(parent)
+
+        self.available_tabs = available_tabs
+        self.result = None
+        self.tab_vars = {}
+
+        self.title("Select Tabs to Upload")
+        self.geometry("420x260")
+        self.resizable(False, False)
+
+        # Make dialog modal
+        self.transient(parent)
+        self.grab_set()
+
+        self._create_widgets()
+
+        # Center the dialog
+        self.update_idletasks()
+        x = (self.winfo_screenwidth() - self.winfo_width()) // 2
+        y = (self.winfo_screenheight() - self.winfo_height()) // 2
+        self.geometry(f"+{x}+{y}")
+
+    def _create_widgets(self):
+        """Create dialog widgets."""
+        info_label = ctk.CTkLabel(
+            self,
+            text="Tabs found in the Excel file.\nSelect which tabs to upload:",
+            font=ctk.CTkFont(size=12)
+        )
+        info_label.pack(padx=15, pady=(15, 5), anchor="w")
+
+        tabs_frame = ctk.CTkFrame(self, fg_color="transparent")
+        tabs_frame.pack(fill="x", padx=15, pady=5)
+
+        for tab_name in self.available_tabs:
+            var = ctk.BooleanVar(value=True)
+            checkbox = ctk.CTkCheckBox(
+                tabs_frame,
+                text=tab_name,
+                variable=var
+            )
+            checkbox.pack(anchor="w", pady=2)
+            self.tab_vars[tab_name] = var
+
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=15, pady=(10, 15))
+
+        upload_btn = ctk.CTkButton(
+            btn_frame,
+            text="Upload",
+            command=self._on_upload,
+            width=100,
+            fg_color=SUCCESS_COLOR,
+            hover_color=SUCCESS_HOVER,
+        )
+        upload_btn.pack(side="right", padx=5)
+
+        cancel_btn = ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            command=self._on_cancel,
+            width=100,
+            fg_color=SECONDARY_COLOR,
+            hover_color=SECONDARY_HOVER,
+        )
+        cancel_btn.pack(side="right", padx=5)
+
+    def _on_upload(self):
+        """Confirm selected tabs."""
+        selected_tabs = [tab for tab, var in self.tab_vars.items() if var.get()]
+        if not selected_tabs:
+            messagebox.showwarning("No Tabs Selected", "Please select at least one tab to upload.")
+            return
+        self.result = selected_tabs
+        self.destroy()
+
+    def _on_cancel(self):
+        """Cancel selection."""
+        self.result = None
+        self.destroy()
+
+    def get_result(self) -> Optional[List[str]]:
+        """Get selected tabs after dialog closes."""
+        self.wait_window()
+        return self.result
+
+
 class SettingsFrame(ctk.CTkFrame):
     """Settings panel for managing lab names and test types."""
 
@@ -1773,15 +1864,22 @@ class MainApplication(ctk.CTk):
         # Parse the file
         lab_names = self.database.get_lab_names()
         parser = ExcelParser(lab_names)
-        records, detected_lab, error = parser.parse_file(file_path, invoice_date)
-        inspection_records, _, inspection_error = parser.parse_inspection_file(file_path, invoice_date)
-
+        available_tabs, detected_lab, error, sheetnames = parser.get_available_tabs(file_path)
         if error:
             messagebox.showerror("Error", error)
             return
 
-        if inspection_error:
-            messagebox.showerror("Error", inspection_error)
+        if not available_tabs:
+            messagebox.showerror(
+                "Error",
+                "No supported tabs found. Expected 'TESTING+SERVICES' or 'Inspection'.\n"
+                f"Available sheets: {', '.join(sheetnames)}"
+            )
+            return
+
+        tab_dialog = TabSelectionDialog(self, list(available_tabs.keys()))
+        selected_tabs = tab_dialog.get_result()
+        if not selected_tabs:
             return
 
         if not detected_lab:
@@ -1791,14 +1889,40 @@ class MainApplication(ctk.CTk):
                 "Records will be imported without lab name."
             )
 
+        records = []
+        inspection_records = []
+        if parser.TARGET_SHEET in selected_tabs:
+            records, _, error = parser.parse_file(
+                file_path,
+                invoice_date,
+                sheet_name=available_tabs[parser.TARGET_SHEET]
+            )
+            if error:
+                messagebox.showerror("Error", error)
+                return
+
+        if parser.INSPECTION_SHEET in selected_tabs:
+            inspection_records, _, inspection_error = parser.parse_inspection_file(
+                file_path,
+                invoice_date,
+                sheet_name=available_tabs[parser.INSPECTION_SHEET],
+                required=True
+            )
+            if inspection_error:
+                messagebox.showerror("Error", inspection_error)
+                return
+
         if not records and not inspection_records:
-            messagebox.showinfo("Info", "No valid records found in the file.")
+            messagebox.showinfo("Info", "No valid records found in the selected tabs.")
             return
 
         # Validate records
-        test_types = self.database.get_test_types()
-        validator = DataValidator(test_types)
-        valid_records, invalid_records = validator.validate_records(records)
+        valid_records = []
+        invalid_records = []
+        if records:
+            test_types = self.database.get_test_types()
+            validator = DataValidator(test_types)
+            valid_records, invalid_records = validator.validate_records(records)
 
         # Insert valid records
         for record in valid_records:
