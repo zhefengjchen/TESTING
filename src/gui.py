@@ -9,7 +9,7 @@ import re
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, ttk
 import tkinter as tk
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 
 # Add parent directory to path for imports
@@ -299,7 +299,7 @@ class InvoiceTable(ctk.CTkFrame):
 class EditDialog(ctk.CTkToplevel):
     """Dialog for editing invoice records."""
 
-    FIELD_CONFIG = [
+    INVOICE_FIELD_CONFIG = [
         ("tajan_bidding_tracking_number", "Tracking Number"),
         ("amazon_test_request", "Amazon Test Request"),
         ("amazon_tracker_number", "Amazon Tracker Number"),
@@ -327,12 +327,104 @@ class EditDialog(ctk.CTkToplevel):
         ("invoice_date", "Invoice Date"),
     ]
 
-    def __init__(self, parent, record: Dict[str, Any] = None, title: str = "Edit Invoice"):
+    FQA_FIELD_CONFIG = [
+        ("tajan_bidding_tracking_number", "Tracking Number"),
+        ("amazon_test_request", "Amazon Test Request"),
+        ("amazon_tracker_number", "Amazon Tracker Number"),
+        ("factory_name", "Factory Name"),
+        ("asin", "ASIN"),
+        ("development_center", "Development Center"),
+        ("category", "Category"),
+        ("product_brand", "Product Brand"),
+        ("product_description", "Product Description"),
+        ("manday", "Manday"),
+        ("testing_sla", "Testing SLA"),
+        ("test_service_type", "Test/Service Type"),
+        ("quotation_order_number", "Quotation/Order Number"),
+        ("request_date", "Request Date"),
+        ("test_start_date", "Test Start Date"),
+        ("report_delivered_date", "Report Delivered Date"),
+        ("report_number", "Report Number"),
+        ("test_inspection_location", "Test Location"),
+        ("product_line", "Product Line"),
+        ("amazon_quality_manager", "Quality Manager"),
+        ("amazon_sourcing_manager", "Sourcing Manager"),
+        ("invoice_number", "Invoice Number"),
+        ("lab_contact", "Lab Contact"),
+        ("comment", "Comment"),
+        ("amount_usd", "Amount (USD)"),
+        ("lab_name", "Lab Name"),
+        ("invoice_date", "Invoice Date"),
+    ]
+
+    PSI_FIELD_CONFIG = [
+        ("tajan_bidding_tracking_number", "Tracking Number"),
+        ("amazon_test_request", "Amazon Test Request"),
+        ("amazon_tracker_number", "Amazon Tracker Number"),
+        ("factory_name", "Factory Name"),
+        ("asin", "ASIN"),
+        ("development_center", "Development Center"),
+        ("category", "Category"),
+        ("product_brand", "Product Brand"),
+        ("product_description", "Product type (on MD matrix)"),
+        ("manday", "Manday"),
+        ("testing_sla", "Testing SLA"),
+        ("test_service_type", "Test/Service Type"),
+        ("quotation_order_number", "Quotation/Order Number"),
+        ("request_date", "Request Date"),
+        ("test_start_date", "Test Start Date"),
+        ("report_delivered_date", "Report Delivered Date"),
+        ("report_number", "Report Number"),
+        ("test_inspection_location", "Test Location"),
+        ("product_line", "Product Line"),
+        ("amazon_quality_manager", "Quality Manager"),
+        ("amazon_sourcing_manager", "Sourcing Manager"),
+        ("invoice_number", "Invoice Number"),
+        ("lab_contact", "Lab Contact"),
+        ("comment", "Comment"),
+        ("amount_usd", "Amount (USD)"),
+        ("lab_name", "Lab Name"),
+        ("invoice_date", "Invoice Date"),
+    ]
+
+    IPC_FIELD_CONFIG = [
+        ("inspection_id", "Inspection ID"),
+        ("factory_id", "Factory ID"),
+        ("amazon_tracker_number", "Tracking #"),
+        ("factory_name", "Factory Name"),
+        ("product_description", "Product Description"),
+        ("manday", "Manday"),
+        ("test_service_type", "Test/Service Type"),
+        ("quotation_order_number", "Quotation/Order Number"),
+        ("request_date", "Request Date"),
+        ("test_start_date", "Test Start Date"),
+        ("report_delivered_date", "Report Delivered Date"),
+        ("report_number", "Report Number"),
+        ("test_inspection_location", "Test Location"),
+        ("product_line", "Product Line"),
+        ("amazon_quality_manager", "Quality Manager"),
+        ("amazon_sourcing_manager", "Sourcing Manager"),
+        ("invoice_number", "Invoice Number"),
+        ("lab_contact", "Lab Contact"),
+        ("comment", "Comment"),
+        ("amount_usd", "Amount (USD)"),
+        ("lab_name", "Lab Name"),
+        ("invoice_date", "Invoice Date"),
+    ]
+
+    def __init__(
+        self,
+        parent,
+        record: Dict[str, Any] = None,
+        title: str = "Edit Invoice",
+        field_config: Optional[List[Tuple[str, str]]] = None
+    ):
         super().__init__(parent)
 
         self.record = record or {}
         self.result = None
         self.entries = {}
+        self.field_config = field_config or self.INVOICE_FIELD_CONFIG
 
         self.title(title)
         self.geometry("600x700")
@@ -357,7 +449,7 @@ class EditDialog(ctk.CTkToplevel):
         scroll_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
         # Create fields
-        for i, (field_id, field_label) in enumerate(self.FIELD_CONFIG):
+        for i, (field_id, field_label) in enumerate(self.field_config):
             frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
             frame.pack(fill="x", pady=2)
 
@@ -2248,13 +2340,26 @@ class MainApplication(ctk.CTk):
             messagebox.showwarning("Warning", "Please select a record to edit")
             return
 
-        dialog = EditDialog(self, record=self.selected_record, title="Edit Invoice")
+        record_source = self.selected_record.get('_source', 'invoice')
+        field_config = EditDialog.INVOICE_FIELD_CONFIG
+        if record_source == "ipc":
+            field_config = EditDialog.IPC_FIELD_CONFIG
+        elif record_source == "fqa":
+            field_config = EditDialog.FQA_FIELD_CONFIG
+        elif record_source == "psi":
+            field_config = EditDialog.PSI_FIELD_CONFIG
+
+        dialog = EditDialog(
+            self,
+            record=self.selected_record,
+            title="Edit Invoice",
+            field_config=field_config
+        )
         result = dialog.get_result()
 
         if result:
             record_id = result.get('id')
             if self.current_tab == "invoices":
-                record_source = self.selected_record.get('_source', 'invoice')
                 ipc_record_id = self.selected_record.get('record_id')
                 fqa_record_id = self.selected_record.get('record_id')
                 psi_record_id = self.selected_record.get('record_id')
@@ -2571,27 +2676,6 @@ class MainApplication(ctk.CTk):
         self.invoices_table.load_data(invoices)
 
         abnormal = self.database.get_all_abnormal_invoices()
-        ipc_abnormal = self._decorate_external_records(
-            self.ipc_database.get_all_inspections(),
-            source="ipc",
-            prefix="IPC-",
-            include_validation_error=True
-        )
-        fqa_abnormal = self._decorate_external_records(
-            self.fqa_database.get_all_invoices(),
-            source="fqa",
-            prefix="FQA-",
-            include_validation_error=True
-        )
-        psi_abnormal = self._decorate_external_records(
-            self.psi_database.get_all_invoices(),
-            source="psi",
-            prefix="PSI-",
-            include_validation_error=True
-        )
-        abnormal.extend(ipc_abnormal)
-        abnormal.extend(fqa_abnormal)
-        abnormal.extend(psi_abnormal)
         self.abnormal_table.load_data(abnormal)
 
         # Update filter lab list
@@ -2634,27 +2718,6 @@ class MainApplication(ctk.CTk):
         """Handle abnormal filter application."""
         if any(filters.values()):
             results = self.database.search_abnormal_invoices(filters)
-            ipc_results = self._decorate_external_records(
-                self.ipc_database.search_inspections(filters),
-                source="ipc",
-                prefix="IPC-",
-                include_validation_error=True
-            )
-            fqa_results = self._decorate_external_records(
-                self.fqa_database.search_invoices(filters),
-                source="fqa",
-                prefix="FQA-",
-                include_validation_error=True
-            )
-            psi_results = self._decorate_external_records(
-                self.psi_database.search_invoices(filters),
-                source="psi",
-                prefix="PSI-",
-                include_validation_error=True
-            )
-            results.extend(ipc_results)
-            results.extend(fqa_results)
-            results.extend(psi_results)
             self.abnormal_table.load_data(results)
             self._update_status(f"Abnormal filter applied: {len(results)} records found")
         else:

@@ -41,9 +41,8 @@ class ExcelParser:
     }
 
     INSPECTION_HEADER_MAPPING = {
-        "Inspection ID": "inspection_id",
         "Factory ID": "factory_id",
-        "Amazon Tracker Number": "amazon_tracker_number",
+        "Tracking #": "amazon_tracker_number",
         "Factory Name": "factory_name",
         "Product Description": "product_description",
         "Manday": "manday",
