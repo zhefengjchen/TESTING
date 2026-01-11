@@ -18,11 +18,13 @@ class Database:
         "tajan_bidding_tracking_number",
         "amazon_test_request",
         "amazon_tracker_number",
+        "factory_name",
         "asin",
         "development_center",
         "category",
         "product_brand",
         "product_description",
+        "manday",
         "testing_sla",
         "test_service_type",
         "quotation_order_number",
@@ -108,11 +110,13 @@ class Database:
                 tajan_bidding_tracking_number TEXT,
                 amazon_test_request TEXT,
                 amazon_tracker_number TEXT,
+                factory_name TEXT,
                 asin TEXT,
                 development_center TEXT,
                 category TEXT,
                 product_brand TEXT,
                 product_description TEXT,
+                manday TEXT,
                 testing_sla TEXT,
                 test_service_type TEXT,
                 quotation_order_number TEXT,
@@ -142,11 +146,13 @@ class Database:
                 tajan_bidding_tracking_number TEXT,
                 amazon_test_request TEXT,
                 amazon_tracker_number TEXT,
+                factory_name TEXT,
                 asin TEXT,
                 development_center TEXT,
                 category TEXT,
                 product_brand TEXT,
                 product_description TEXT,
+                manday TEXT,
                 testing_sla TEXT,
                 test_service_type TEXT,
                 quotation_order_number TEXT,
@@ -188,6 +194,30 @@ class Database:
             )
         """)
 
+        self.conn.commit()
+        self._ensure_columns(
+            "invoices",
+            {
+                "factory_name": "TEXT",
+                "manday": "TEXT"
+            }
+        )
+        self._ensure_columns(
+            "abnormal_invoices",
+            {
+                "factory_name": "TEXT",
+                "manday": "TEXT"
+            }
+        )
+
+    def _ensure_columns(self, table: str, columns: Dict[str, str]) -> None:
+        """Ensure columns exist for a table."""
+        cursor = self.conn.cursor()
+        cursor.execute(f"PRAGMA table_info({table})")
+        existing = {row[1] for row in cursor.fetchall()}
+        for column, column_type in columns.items():
+            if column not in existing:
+                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
         self.conn.commit()
 
     def _initialize_settings(self):
@@ -660,11 +690,13 @@ class FqaDatabase:
                 tajan_bidding_tracking_number TEXT,
                 amazon_test_request TEXT,
                 amazon_tracker_number TEXT,
+                factory_name TEXT,
                 asin TEXT,
                 development_center TEXT,
                 category TEXT,
                 product_brand TEXT,
                 product_description TEXT,
+                manday TEXT,
                 testing_sla TEXT,
                 test_service_type TEXT,
                 quotation_order_number TEXT,
@@ -686,6 +718,23 @@ class FqaDatabase:
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        self.conn.commit()
+        self._ensure_columns(
+            "fqa_invoices",
+            {
+                "factory_name": "TEXT",
+                "manday": "TEXT"
+            }
+        )
+
+    def _ensure_columns(self, table: str, columns: Dict[str, str]) -> None:
+        """Ensure columns exist for a table."""
+        cursor = self.conn.cursor()
+        cursor.execute(f"PRAGMA table_info({table})")
+        existing = {row[1] for row in cursor.fetchall()}
+        for column, column_type in columns.items():
+            if column not in existing:
+                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
         self.conn.commit()
 
     def insert_invoice(self, data: Dict[str, Any]) -> int:
@@ -816,11 +865,13 @@ class PsiInspectionDatabase:
                 tajan_bidding_tracking_number TEXT,
                 amazon_test_request TEXT,
                 amazon_tracker_number TEXT,
+                factory_name TEXT,
                 asin TEXT,
                 development_center TEXT,
                 category TEXT,
                 product_brand TEXT,
                 product_description TEXT,
+                manday TEXT,
                 testing_sla TEXT,
                 test_service_type TEXT,
                 quotation_order_number TEXT,
@@ -842,6 +893,23 @@ class PsiInspectionDatabase:
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        self.conn.commit()
+        self._ensure_columns(
+            "psi_invoices",
+            {
+                "factory_name": "TEXT",
+                "manday": "TEXT"
+            }
+        )
+
+    def _ensure_columns(self, table: str, columns: Dict[str, str]) -> None:
+        """Ensure columns exist for a table."""
+        cursor = self.conn.cursor()
+        cursor.execute(f"PRAGMA table_info({table})")
+        existing = {row[1] for row in cursor.fetchall()}
+        for column, column_type in columns.items():
+            if column not in existing:
+                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
         self.conn.commit()
 
     def insert_invoice(self, data: Dict[str, Any]) -> int:
@@ -972,11 +1040,13 @@ class PsiInspectionDatabase:
                 tajan_bidding_tracking_number TEXT,
                 amazon_test_request TEXT,
                 amazon_tracker_number TEXT,
+                factory_name TEXT,
                 asin TEXT,
                 development_center TEXT,
                 category TEXT,
                 product_brand TEXT,
                 product_description TEXT,
+                manday TEXT,
                 testing_sla TEXT,
                 test_service_type TEXT,
                 quotation_order_number TEXT,
@@ -998,6 +1068,23 @@ class PsiInspectionDatabase:
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        self.conn.commit()
+        self._ensure_columns(
+            "psi_invoices",
+            {
+                "factory_name": "TEXT",
+                "manday": "TEXT"
+            }
+        )
+
+    def _ensure_columns(self, table: str, columns: Dict[str, str]) -> None:
+        """Ensure columns exist for a table."""
+        cursor = self.conn.cursor()
+        cursor.execute(f"PRAGMA table_info({table})")
+        existing = {row[1] for row in cursor.fetchall()}
+        for column, column_type in columns.items():
+            if column not in existing:
+                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
         self.conn.commit()
 
     def insert_invoice(self, data: Dict[str, Any]) -> int:

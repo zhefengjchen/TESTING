@@ -327,8 +327,65 @@ class EditDialog(ctk.CTkToplevel):
         ("invoice_date", "Invoice Date"),
     ]
 
-    FQA_FIELD_CONFIG = list(INVOICE_FIELD_CONFIG)
-    PSI_FIELD_CONFIG = list(INVOICE_FIELD_CONFIG)
+    FQA_FIELD_CONFIG = [
+        ("tajan_bidding_tracking_number", "Tracking Number"),
+        ("amazon_test_request", "Amazon Test Request"),
+        ("amazon_tracker_number", "Amazon Tracker Number"),
+        ("factory_name", "Factory Name"),
+        ("asin", "ASIN"),
+        ("development_center", "Development Center"),
+        ("category", "Category"),
+        ("product_brand", "Product Brand"),
+        ("product_description", "Product Description"),
+        ("manday", "Manday"),
+        ("testing_sla", "Testing SLA"),
+        ("test_service_type", "Test/Service Type"),
+        ("quotation_order_number", "Quotation/Order Number"),
+        ("request_date", "Request Date"),
+        ("test_start_date", "Test Start Date"),
+        ("report_delivered_date", "Report Delivered Date"),
+        ("report_number", "Report Number"),
+        ("test_inspection_location", "Test Location"),
+        ("product_line", "Product Line"),
+        ("amazon_quality_manager", "Quality Manager"),
+        ("amazon_sourcing_manager", "Sourcing Manager"),
+        ("invoice_number", "Invoice Number"),
+        ("lab_contact", "Lab Contact"),
+        ("comment", "Comment"),
+        ("amount_usd", "Amount (USD)"),
+        ("lab_name", "Lab Name"),
+        ("invoice_date", "Invoice Date"),
+    ]
+
+    PSI_FIELD_CONFIG = [
+        ("tajan_bidding_tracking_number", "Tracking Number"),
+        ("amazon_test_request", "Amazon Test Request"),
+        ("amazon_tracker_number", "Amazon Tracker Number"),
+        ("factory_name", "Factory Name"),
+        ("asin", "ASIN"),
+        ("development_center", "Development Center"),
+        ("category", "Category"),
+        ("product_brand", "Product Brand"),
+        ("product_description", "Product type (on MD matrix)"),
+        ("manday", "Manday"),
+        ("testing_sla", "Testing SLA"),
+        ("test_service_type", "Test/Service Type"),
+        ("quotation_order_number", "Quotation/Order Number"),
+        ("request_date", "Request Date"),
+        ("test_start_date", "Test Start Date"),
+        ("report_delivered_date", "Report Delivered Date"),
+        ("report_number", "Report Number"),
+        ("test_inspection_location", "Test Location"),
+        ("product_line", "Product Line"),
+        ("amazon_quality_manager", "Quality Manager"),
+        ("amazon_sourcing_manager", "Sourcing Manager"),
+        ("invoice_number", "Invoice Number"),
+        ("lab_contact", "Lab Contact"),
+        ("comment", "Comment"),
+        ("amount_usd", "Amount (USD)"),
+        ("lab_name", "Lab Name"),
+        ("invoice_date", "Invoice Date"),
+    ]
 
     IPC_FIELD_CONFIG = [
         ("inspection_id", "Inspection ID"),
@@ -2619,27 +2676,6 @@ class MainApplication(ctk.CTk):
         self.invoices_table.load_data(invoices)
 
         abnormal = self.database.get_all_abnormal_invoices()
-        ipc_abnormal = self._decorate_external_records(
-            self.ipc_database.get_all_inspections(),
-            source="ipc",
-            prefix="IPC-",
-            include_validation_error=True
-        )
-        fqa_abnormal = self._decorate_external_records(
-            self.fqa_database.get_all_invoices(),
-            source="fqa",
-            prefix="FQA-",
-            include_validation_error=True
-        )
-        psi_abnormal = self._decorate_external_records(
-            self.psi_database.get_all_invoices(),
-            source="psi",
-            prefix="PSI-",
-            include_validation_error=True
-        )
-        abnormal.extend(ipc_abnormal)
-        abnormal.extend(fqa_abnormal)
-        abnormal.extend(psi_abnormal)
         self.abnormal_table.load_data(abnormal)
 
         # Update filter lab list
@@ -2682,27 +2718,6 @@ class MainApplication(ctk.CTk):
         """Handle abnormal filter application."""
         if any(filters.values()):
             results = self.database.search_abnormal_invoices(filters)
-            ipc_results = self._decorate_external_records(
-                self.ipc_database.search_inspections(filters),
-                source="ipc",
-                prefix="IPC-",
-                include_validation_error=True
-            )
-            fqa_results = self._decorate_external_records(
-                self.fqa_database.search_invoices(filters),
-                source="fqa",
-                prefix="FQA-",
-                include_validation_error=True
-            )
-            psi_results = self._decorate_external_records(
-                self.psi_database.search_invoices(filters),
-                source="psi",
-                prefix="PSI-",
-                include_validation_error=True
-            )
-            results.extend(ipc_results)
-            results.extend(fqa_results)
-            results.extend(psi_results)
             self.abnormal_table.load_data(results)
             self._update_status(f"Abnormal filter applied: {len(results)} records found")
         else:
