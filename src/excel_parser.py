@@ -63,6 +63,28 @@ class ExcelParser:
         "AMOUNT (Currency=USD)": "amount_usd",
     }
 
+    FQA_HEADER_MAPPING = {
+        "Tajan Bidding Tracking Number": "amazon_tracker_number",
+        "Amazon Tracker Number": "tajan_bidding_tracking_number",
+        "Factory Name": "factory_name",
+        "Product Description": "product_description",
+        "Manday": "manday",
+        "Test / Service Type": "test_service_type",
+        "Quotation/Order Number": "quotation_order_number",
+        "Request Date": "request_date",
+        "Test Start Date": "test_start_date",
+        "Report Delivered Date": "report_delivered_date",
+        "Report number": "report_number",
+        "Test / inspection Location": "test_inspection_location",
+        "Product line": "product_line",
+        "AMAZON QUALITY MANAGER": "amazon_quality_manager",
+        "AMAZON SOURCING MANAGER": "amazon_sourcing_manager",
+        "Invoice #": "invoice_number",
+        "Lab contact": "lab_contact",
+        "COMMENT (IF ANY)": "comment",
+        "AMOUNT (Currency=USD)": "amount_usd",
+    }
+
     # Rows to skip (subtotals, tax, etc.) - case insensitive regex patterns
     SKIP_PATTERNS = [
         r'^remit\s*payment\s*to',
@@ -86,7 +108,8 @@ class ExcelParser:
 
     # Sheet name to parse
     TARGET_SHEET = "TESTING+SERVICES"
-    INSPECTION_SHEET = "Inspection"
+    INSPECTION_SHEET = "IPC"
+    FQA_SHEET = "FQA"
 
     def __init__(self, lab_names: List[str] = None):
         """Initialize the parser with known lab names."""
@@ -183,6 +206,47 @@ class ExcelParser:
         workbook.close()
         return records, lab_name, None
 
+    def parse_fqa_file(
+        self,
+        file_path: str,
+        invoice_date: str = None,
+        sheet_name: Optional[str] = None,
+        required: bool = False
+    ) -> Tuple[List[Dict[str, Any]], Optional[str], Optional[str]]:
+        """
+        Parse an Excel file and extract FQA data.
+
+        Args:
+            file_path: Path to the Excel file
+            invoice_date: Optional invoice date to add to all records
+
+        Returns:
+            Tuple of (list of FQA records, detected lab name, error message if any)
+        """
+        filename = os.path.basename(file_path)
+        lab_name = self.detect_lab_name(filename)
+
+        try:
+            workbook = load_workbook(file_path, data_only=True)
+        except Exception as e:
+            return [], lab_name, f"Failed to open Excel file: {str(e)}"
+
+        target_name = sheet_name or self.FQA_SHEET
+        match_name = self._find_sheet_name(workbook, target_name)
+        sheet = workbook[match_name] if match_name else None
+
+        if sheet is None:
+            workbook.close()
+            if required or sheet_name:
+                return [], lab_name, (
+                    f"Sheet '{target_name}' not found. Available sheets: {', '.join(workbook.sheetnames)}"
+                )
+            return [], lab_name, None
+
+        records = self._parse_fqa_sheet(sheet, lab_name, invoice_date)
+        workbook.close()
+        return records, lab_name, None
+
     def get_available_tabs(
         self,
         file_path: str
@@ -204,6 +268,10 @@ class ExcelParser:
         inspection_sheet = self._find_sheet_name(workbook, self.INSPECTION_SHEET)
         if inspection_sheet:
             available_tabs[self.INSPECTION_SHEET] = inspection_sheet
+
+        fqa_sheet = self._find_sheet_name(workbook, self.FQA_SHEET)
+        if fqa_sheet:
+            available_tabs[self.FQA_SHEET] = fqa_sheet
 
         sheetnames = list(workbook.sheetnames)
         workbook.close()
@@ -338,7 +406,7 @@ class ExcelParser:
                     value = row_values[col_idx]
                     record[db_column] = self._format_value(value, db_column)
 
-            record['test_service_type'] = 'PSI'
+            record['test_service_type'] = 'IPC'
             record['lab_name'] = lab_name or ''
             record['invoice_date'] = invoice_date or ''
 
@@ -351,6 +419,73 @@ class ExcelParser:
                 continue
 
             if not self._has_meaningful_inspection_data(record):
+                continue
+
+            records.append(record)
+
+        return records
+
+    def _parse_fqa_sheet(
+        self,
+        sheet: Worksheet,
+        lab_name: Optional[str],
+        invoice_date: Optional[str]
+    ) -> List[Dict[str, Any]]:
+        """Parse a worksheet and extract FQA records."""
+        records = []
+        header_row_idx = None
+        header_mapping = {}
+        normalized_header_mapping = self._normalized_header_mapping(self.FQA_HEADER_MAPPING)
+
+        for row_idx, row in enumerate(sheet.iter_rows(min_row=1, max_row=50), start=1):
+            row_values = [cell.value for cell in row]
+            matching_headers = 0
+            for col_idx, cell_value in enumerate(row_values):
+                if cell_value and isinstance(cell_value, str):
+                    cell_value_stripped = self._normalize_header(cell_value)
+                    if cell_value_stripped in normalized_header_mapping:
+                        matching_headers += 1
+                        header_mapping[col_idx] = normalized_header_mapping[cell_value_stripped]
+
+            if matching_headers >= 5:
+                header_row_idx = row_idx
+                break
+
+        if header_row_idx is None:
+            return records
+
+        for row in sheet.iter_rows(min_row=header_row_idx + 1):
+            row_values = [cell.value for cell in row]
+            if all(v is None or (isinstance(v, str) and v.strip() == '') for v in row_values):
+                continue
+
+            first_non_empty = None
+            for v in row_values:
+                if v is not None and (not isinstance(v, str) or v.strip() != ''):
+                    first_non_empty = str(v).strip().lower()
+                    break
+
+            if first_non_empty and self._should_skip_row(first_non_empty):
+                continue
+
+            record = {}
+            for col_idx, db_column in header_mapping.items():
+                if col_idx < len(row_values):
+                    value = row_values[col_idx]
+                    record[db_column] = self._format_value(value, db_column)
+
+            record['lab_name'] = lab_name or ''
+            record['invoice_date'] = invoice_date or ''
+
+            amount_value = record.get('amount_usd', 0)
+            if not amount_value or float(amount_value) <= 0:
+                continue
+
+            raw_amount = record.get('amount_usd', '')
+            if isinstance(raw_amount, str) and self._should_skip_row(raw_amount.strip().lower()):
+                continue
+
+            if not self._has_meaningful_data(record):
                 continue
 
             records.append(record)
