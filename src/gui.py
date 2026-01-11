@@ -15,7 +15,7 @@ from datetime import datetime
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.database import Database, PsiDatabase
+from src.database import Database, PsiDatabase, FqaDatabase
 from src.excel_parser import ExcelParser, DataValidator
 
 
@@ -845,11 +845,12 @@ class SummaryFrame(ctk.CTkFrame):
     MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-    def __init__(self, parent, database: Database, ipc_database: PsiDatabase, **kwargs):
+    def __init__(self, parent, database: Database, ipc_database: PsiDatabase, fqa_database: FqaDatabase, **kwargs):
         super().__init__(parent, **kwargs)
 
         self.database = database
         self.ipc_database = ipc_database
+        self.fqa_database = fqa_database
         self.current_year = datetime.now().year
         self.current_view = "cost"  # cost, volume, unit_cost, by_lab, lab_detail
         self.selected_lab = "All"
@@ -1058,7 +1059,9 @@ class SummaryFrame(ctk.CTkFrame):
         # Get both valid and abnormal invoices
         valid_invoices = self.database.get_all_invoices()
         ipc_invoices = self.ipc_database.get_all_inspections()
+        fqa_invoices = self.fqa_database.get_all_invoices()
         valid_invoices.extend(ipc_invoices)
+        valid_invoices.extend(fqa_invoices)
         abnormal_invoices = self.database.get_all_abnormal_invoices()
 
         # Add source indicator to each record
@@ -1636,6 +1639,7 @@ class MainApplication(ctk.CTk):
         # Initialize database
         self.database = Database()
         self.ipc_database = PsiDatabase()
+        self.fqa_database = FqaDatabase()
 
         # Current state
         self.current_tab = "invoices"
@@ -1816,7 +1820,12 @@ class MainApplication(ctk.CTk):
 
     def _create_summary_tab(self):
         """Create the summary/analytics tab."""
-        self.summary_frame = SummaryFrame(self.content_container, self.database, self.ipc_database)
+        self.summary_frame = SummaryFrame(
+            self.content_container,
+            self.database,
+            self.ipc_database,
+            self.fqa_database
+        )
 
     def _create_status_bar(self):
         """Create the status bar."""
@@ -1876,7 +1885,7 @@ class MainApplication(ctk.CTk):
         if not available_tabs:
             messagebox.showerror(
                 "Error",
-                "No supported tabs found. Expected 'TESTING+SERVICES' or 'IPC'.\n"
+                "No supported tabs found. Expected 'TESTING+SERVICES', 'IPC', or 'FQA'.\n"
                 f"Available sheets: {', '.join(sheetnames)}"
             )
             return
@@ -1895,6 +1904,7 @@ class MainApplication(ctk.CTk):
 
         records = []
         inspection_records = []
+        fqa_records = []
         if parser.TARGET_SHEET in selected_tabs:
             records, _, error = parser.parse_file(
                 file_path,
@@ -1916,7 +1926,18 @@ class MainApplication(ctk.CTk):
                 messagebox.showerror("Error", inspection_error)
                 return
 
-        if not records and not inspection_records:
+        if parser.FQA_SHEET in selected_tabs:
+            fqa_records, _, fqa_error = parser.parse_fqa_file(
+                file_path,
+                invoice_date,
+                sheet_name=available_tabs[parser.FQA_SHEET],
+                required=True
+            )
+            if fqa_error:
+                messagebox.showerror("Error", fqa_error)
+                return
+
+        if not records and not inspection_records and not fqa_records:
             messagebox.showinfo("Info", "No valid records found in the selected tabs.")
             return
 
@@ -1942,18 +1963,25 @@ class MainApplication(ctk.CTk):
                 self.ipc_database.insert_inspection(record)
                 inspection_count += 1
 
+        fqa_count = 0
+        if fqa_records:
+            for record in fqa_records:
+                self.fqa_database.insert_invoice(record)
+                fqa_count += 1
+
         # Show summary
         messagebox.showinfo(
             "Import Complete",
             f"Successfully imported {len(valid_records)} valid records.\n"
             f"{len(invalid_records)} records moved to Abnormal Items.\n"
-            f"{inspection_count} IPC inspection records saved."
+            f"{inspection_count} IPC inspection records saved.\n"
+            f"{fqa_count} FQA records saved."
         )
 
         self._refresh_data()
         self._update_status(
             f"Imported {len(records)} records from {os.path.basename(file_path)} "
-            f"({inspection_count} IPC inspections)"
+            f"({inspection_count} IPC inspections, {fqa_count} FQA records)"
         )
 
     def _ask_invoice_date(self, default_date: Optional[str] = None) -> str:
@@ -2056,14 +2084,33 @@ class MainApplication(ctk.CTk):
             if self.current_tab == "invoices":
                 record_source = self.selected_record.get('_source', 'invoice')
                 ipc_record_id = self.selected_record.get('record_id')
+                fqa_record_id = self.selected_record.get('record_id')
                 if record_source == "ipc":
                     result['id'] = ipc_record_id
                     self.ipc_database.update_inspection(ipc_record_id, result)
+                elif record_source == "fqa":
+                    result['id'] = fqa_record_id
+                    self.fqa_database.update_invoice(fqa_record_id, result)
                 else:
                     self.database.update_invoice(record_id, result)
                 self._refresh_data()
                 self._update_status(f"Record {record_id} updated")
             else:
+                record_source = self.selected_record.get('_source', 'invoice')
+                ipc_record_id = self.selected_record.get('record_id')
+                fqa_record_id = self.selected_record.get('record_id')
+                if record_source == "ipc":
+                    result['id'] = ipc_record_id
+                    self.ipc_database.update_inspection(ipc_record_id, result)
+                    self._refresh_data()
+                    self._update_status(f"Record {record_id} updated")
+                    return
+                if record_source == "fqa":
+                    result['id'] = fqa_record_id
+                    self.fqa_database.update_invoice(fqa_record_id, result)
+                    self._refresh_data()
+                    self._update_status(f"Record {record_id} updated")
+                    return
                 # Re-validate abnormal item after edit
                 test_types = self.database.get_test_types()
                 validator = DataValidator(test_types)
@@ -2100,12 +2147,23 @@ class MainApplication(ctk.CTk):
             if self.current_tab == "invoices":
                 record_source = self.selected_record.get('_source', 'invoice')
                 ipc_record_id = self.selected_record.get('record_id')
+                fqa_record_id = self.selected_record.get('record_id')
                 if record_source == "ipc":
                     self.ipc_database.delete_inspection(ipc_record_id)
+                elif record_source == "fqa":
+                    self.fqa_database.delete_invoice(fqa_record_id)
                 else:
                     self.database.delete_invoice(record_id)
             else:
-                self.database.delete_abnormal_invoice(record_id)
+                record_source = self.selected_record.get('_source', 'invoice')
+                ipc_record_id = self.selected_record.get('record_id')
+                fqa_record_id = self.selected_record.get('record_id')
+                if record_source == "ipc":
+                    self.ipc_database.delete_inspection(ipc_record_id)
+                elif record_source == "fqa":
+                    self.fqa_database.delete_invoice(fqa_record_id)
+                else:
+                    self.database.delete_abnormal_invoice(record_id)
 
             self.selected_record = None
             self._refresh_data()
@@ -2142,8 +2200,12 @@ class MainApplication(ctk.CTk):
                     record_id = record.get('id')
                     record_source = record.get('_source', 'invoice')
                     ipc_record_id = record.get('record_id')
+                    fqa_record_id = record.get('record_id')
                     if record_source == "ipc":
                         if self.ipc_database.update_inspection(ipc_record_id, result):
+                            success_count += 1
+                    elif record_source == "fqa":
+                        if self.fqa_database.update_invoice(fqa_record_id, result):
                             success_count += 1
                     else:
                         if self.database.update_invoice(record_id, result):
@@ -2161,10 +2223,24 @@ class MainApplication(ctk.CTk):
 
                 for record in selected_records:
                     record_id = record.get('id')
+                    record_source = record.get('_source', 'invoice')
+                    ipc_record_id = record.get('record_id')
+                    fqa_record_id = record.get('record_id')
 
                     # Merge the bulk edit changes into the record
                     updated_record = dict(record)
                     updated_record.update(result)
+
+                    if record_source == "ipc":
+                        updated_record['id'] = ipc_record_id
+                        if self.ipc_database.update_inspection(ipc_record_id, updated_record):
+                            updated_count += 1
+                        continue
+                    if record_source == "fqa":
+                        updated_record['id'] = fqa_record_id
+                        if self.fqa_database.update_invoice(fqa_record_id, updated_record):
+                            updated_count += 1
+                        continue
 
                     # Re-validate
                     is_valid, errors = validator.validate_record(updated_record)
@@ -2220,15 +2296,25 @@ class MainApplication(ctk.CTk):
             record_id = record.get('id')
             record_source = record.get('_source', 'invoice')
             ipc_record_id = record.get('record_id')
+            fqa_record_id = record.get('record_id')
             if self.current_tab == "invoices":
                 if record_source == "ipc":
                     if self.ipc_database.delete_inspection(ipc_record_id):
+                        success_count += 1
+                elif record_source == "fqa":
+                    if self.fqa_database.delete_invoice(fqa_record_id):
                         success_count += 1
                 else:
                     if self.database.delete_invoice(record_id):
                         success_count += 1
             else:
-                if self.database.delete_abnormal_invoice(record_id):
+                if record_source == "ipc":
+                    if self.ipc_database.delete_inspection(ipc_record_id):
+                        success_count += 1
+                elif record_source == "fqa":
+                    if self.fqa_database.delete_invoice(fqa_record_id):
+                        success_count += 1
+                elif self.database.delete_abnormal_invoice(record_id):
                     success_count += 1
 
         self.selected_record = None
@@ -2236,25 +2322,57 @@ class MainApplication(ctk.CTk):
         self._update_status(f"Bulk delete: {success_count} records deleted")
         messagebox.showinfo("Success", f"Successfully deleted {success_count} records.")
 
-    def _decorate_ipc_records(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Add IPC metadata for display/editing in the invoices table."""
+    def _decorate_external_records(
+        self,
+        records: List[Dict[str, Any]],
+        source: str,
+        prefix: str,
+        include_validation_error: bool = False
+    ) -> List[Dict[str, Any]]:
+        """Add metadata for display/editing in the invoices table."""
         decorated = []
         for record in records:
-            ipc_record = dict(record)
-            ipc_record['_source'] = 'ipc'
-            ipc_record['record_id'] = ipc_record.get('id')
-            ipc_record['id'] = f"IPC-{ipc_record.get('id')}"
-            decorated.append(ipc_record)
+            decorated_record = dict(record)
+            decorated_record['_source'] = source
+            decorated_record['record_id'] = decorated_record.get('id')
+            decorated_record['id'] = f"{prefix}{decorated_record.get('id')}"
+            if include_validation_error and 'validation_error' not in decorated_record:
+                decorated_record['validation_error'] = ''
+            decorated.append(decorated_record)
         return decorated
 
     def _refresh_data(self):
         """Refresh all data tables."""
         invoices = self.database.get_all_invoices()
-        ipc_invoices = self._decorate_ipc_records(self.ipc_database.get_all_inspections())
+        ipc_invoices = self._decorate_external_records(
+            self.ipc_database.get_all_inspections(),
+            source="ipc",
+            prefix="IPC-"
+        )
+        fqa_invoices = self._decorate_external_records(
+            self.fqa_database.get_all_invoices(),
+            source="fqa",
+            prefix="FQA-"
+        )
         invoices.extend(ipc_invoices)
+        invoices.extend(fqa_invoices)
         self.invoices_table.load_data(invoices)
 
         abnormal = self.database.get_all_abnormal_invoices()
+        ipc_abnormal = self._decorate_external_records(
+            self.ipc_database.get_all_inspections(),
+            source="ipc",
+            prefix="IPC-",
+            include_validation_error=True
+        )
+        fqa_abnormal = self._decorate_external_records(
+            self.fqa_database.get_all_invoices(),
+            source="fqa",
+            prefix="FQA-",
+            include_validation_error=True
+        )
+        abnormal.extend(ipc_abnormal)
+        abnormal.extend(fqa_abnormal)
         self.abnormal_table.load_data(abnormal)
 
         # Update filter lab list
@@ -2264,8 +2382,18 @@ class MainApplication(ctk.CTk):
         """Handle filter application."""
         if any(filters.values()):
             results = self.database.search_invoices(filters)
-            ipc_results = self._decorate_ipc_records(self.ipc_database.search_inspections(filters))
+            ipc_results = self._decorate_external_records(
+                self.ipc_database.search_inspections(filters),
+                source="ipc",
+                prefix="IPC-"
+            )
+            fqa_results = self._decorate_external_records(
+                self.fqa_database.search_invoices(filters),
+                source="fqa",
+                prefix="FQA-"
+            )
             results.extend(ipc_results)
+            results.extend(fqa_results)
             self.invoices_table.load_data(results)
             self._update_status(f"Filter applied: {len(results)} records found")
         else:
