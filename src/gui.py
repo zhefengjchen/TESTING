@@ -119,6 +119,7 @@ class InvoiceTable(ctk.CTkFrame):
         self.show_validation_error = show_validation_error
         self.data = []
         self.selected_id = None
+        self._sort_state = {}
 
         self._create_table()
 
@@ -149,7 +150,12 @@ class InvoiceTable(ctk.CTkFrame):
 
         # Configure columns
         for col_id, col_name, col_width in columns:
-            self.tree.heading(col_id, text=col_name, anchor="w")
+            self.tree.heading(
+                col_id,
+                text=col_name,
+                anchor="w",
+                command=lambda cid=col_id: self._sort_by_column(cid)
+            )
             self.tree.column(col_id, width=col_width, minwidth=50, anchor="w")
 
         # Scrollbars
@@ -186,10 +192,12 @@ class InvoiceTable(ctk.CTkFrame):
         """Handle double-click for editing."""
         pass  # Will be implemented for inline editing
 
-    def load_data(self, data: List[Dict[str, Any]]):
+    def load_data(self, data: List[Dict[str, Any]], reset_sort: bool = True):
         """Load data into the table."""
         self.data = data
         self.tree.delete(*self.tree.get_children())
+        if reset_sort:
+            self._sort_state = {}
 
         columns = list(self.DISPLAY_COLUMNS)
         if self.show_validation_error:
@@ -206,6 +214,54 @@ class InvoiceTable(ctk.CTkFrame):
                         pass
                 values.append(value)
             self.tree.insert('', 'end', values=values)
+
+    def _sort_by_column(self, column_id: str):
+        """Sort table data by the selected column."""
+        if not self.data:
+            return
+
+        ascending = not self._sort_state.get(column_id, False)
+        self._sort_state = {column_id: ascending}
+
+        def sort_key(record: Dict[str, Any]):
+            value = record.get(column_id)
+            return self._coerce_sort_value(column_id, value)
+
+        self.data.sort(key=sort_key, reverse=not ascending)
+        self.load_data(self.data, reset_sort=False)
+
+    @staticmethod
+    def _coerce_sort_value(column_id: str, value: Any):
+        """Normalize values for sorting across data types."""
+        if value is None:
+            return ""
+
+        if column_id == "amount_usd":
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return 0
+
+        if column_id in {"invoice_date", "request_date", "test_start_date", "report_delivered_date"}:
+            try:
+                return datetime.fromisoformat(str(value))
+            except ValueError:
+                return datetime.min
+
+        if column_id == "id":
+            value_str = str(value)
+            if "-" in value_str:
+                prefix, _, suffix = value_str.partition("-")
+                try:
+                    return (prefix, int(suffix))
+                except ValueError:
+                    return (prefix, suffix)
+            try:
+                return int(value_str)
+            except ValueError:
+                return value_str.lower()
+
+        return str(value).lower()
 
     def get_selected_id(self) -> Optional[int]:
         """Get the ID of the selected row."""
@@ -844,6 +900,32 @@ class SummaryFrame(ctk.CTkFrame):
 
     MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    TEST_TYPE_ORDER = [
+        "Benchmark Test",
+        "Benchmark Sample Purchase",
+        "Usability Test",
+        "Comparison",
+        "PPT",
+        "PT",
+        "PT-Initial",
+        "PT-Final",
+        "Packaging",
+        "ET",
+        "VT",
+        "PVT",
+        "Delorean PT",
+        "Delorean DDC",
+        "Failure & Defect Analysis",
+        "Usability Protocol",
+        "DP Review",
+        "PRD & Protocol Upgrade",
+        "Performance Protocol",
+        "FQA",
+        "IPC",
+        "PSI",
+        "ECR",
+        "Declaration of Conformity",
+    ]
 
     def __init__(
         self,
@@ -1118,6 +1200,15 @@ class SummaryFrame(ctk.CTkFrame):
         elif self.current_view == "lab_detail":
             self._show_lab_detail_summary(year_valid, year_abnormal)
 
+    def _ordered_test_types(self, test_types: List[str]) -> List[str]:
+        """Order test types based on the requested sequence."""
+        order_index = {name: index for index, name in enumerate(self.TEST_TYPE_ORDER)}
+
+        def sort_key(name: str):
+            return (order_index.get(name, len(order_index)), name)
+
+        return sorted(test_types, key=sort_key)
+
     def _update_stats_cards(self, invoices: List[Dict[str, Any]], valid_count: int = 0, abnormal_count: int = 0):
         """Update the statistics cards."""
         total_cost = sum(float(inv.get('amount_usd', 0) or 0) for inv in invoices)
@@ -1178,7 +1269,7 @@ class SummaryFrame(ctk.CTkFrame):
         grand_totals = {m: 0 for m in range(1, 13)}
 
         # Add valid invoice rows first
-        for test_type in sorted(valid_data.keys()):
+        for test_type in self._ordered_test_types(list(valid_data.keys())):
             row_data = ["Valid", test_type]
             row_total = 0
             for m in range(1, 13):
@@ -1190,7 +1281,7 @@ class SummaryFrame(ctk.CTkFrame):
             self.summary_tree.insert('', 'end', values=row_data)
 
         # Add abnormal invoice rows
-        for test_type in sorted(abnormal_data.keys()):
+        for test_type in self._ordered_test_types(list(abnormal_data.keys())):
             row_data = ["Abnormal", test_type]
             row_total = 0
             for m in range(1, 13):
@@ -1236,7 +1327,7 @@ class SummaryFrame(ctk.CTkFrame):
         grand_totals = {m: 0 for m in range(1, 13)}
 
         # Add valid invoice rows first
-        for test_type in sorted(valid_data.keys()):
+        for test_type in self._ordered_test_types(list(valid_data.keys())):
             row_data = ["Valid", test_type]
             row_total = 0
             for m in range(1, 13):
@@ -1248,7 +1339,7 @@ class SummaryFrame(ctk.CTkFrame):
             self.summary_tree.insert('', 'end', values=row_data)
 
         # Add abnormal invoice rows
-        for test_type in sorted(abnormal_data.keys()):
+        for test_type in self._ordered_test_types(list(abnormal_data.keys())):
             row_data = ["Abnormal", test_type]
             row_total = 0
             for m in range(1, 13):
@@ -1299,7 +1390,7 @@ class SummaryFrame(ctk.CTkFrame):
         grand_counts = {m: 0 for m in range(1, 13)}
 
         # Add valid invoice rows first
-        for test_type in sorted(valid_cost.keys()):
+        for test_type in self._ordered_test_types(list(valid_cost.keys())):
             row_data = ["Valid", test_type]
             row_total_cost = 0
             row_total_count = 0
@@ -1323,7 +1414,7 @@ class SummaryFrame(ctk.CTkFrame):
             self.summary_tree.insert('', 'end', values=row_data)
 
         # Add abnormal invoice rows
-        for test_type in sorted(abnormal_cost.keys()):
+        for test_type in self._ordered_test_types(list(abnormal_cost.keys())):
             row_data = ["Abnormal", test_type]
             row_total_cost = 0
             row_total_count = 0
@@ -1502,7 +1593,7 @@ class SummaryFrame(ctk.CTkFrame):
 
         # Add valid invoice rows first
         for lab in sorted(valid_data.keys()):
-            for test_type in sorted(valid_data[lab].keys()):
+            for test_type in self._ordered_test_types(list(valid_data[lab].keys())):
                 cost = valid_data[lab][test_type]['cost']
                 count = valid_data[lab][test_type]['count']
                 unit_cost = cost / count if count > 0 else 0
@@ -1521,7 +1612,7 @@ class SummaryFrame(ctk.CTkFrame):
 
         # Add abnormal invoice rows
         for lab in sorted(abnormal_data.keys()):
-            for test_type in sorted(abnormal_data[lab].keys()):
+            for test_type in self._ordered_test_types(list(abnormal_data[lab].keys())):
                 cost = abnormal_data[lab][test_type]['cost']
                 count = abnormal_data[lab][test_type]['count']
                 unit_cost = cost / count if count > 0 else 0
@@ -1554,22 +1645,32 @@ class SummaryFrame(ctk.CTkFrame):
 class FilterFrame(ctk.CTkFrame):
     """Filter panel for searching invoice data."""
 
-    def __init__(self, parent, database: Database, on_filter_callback=None, **kwargs):
+    def __init__(
+        self,
+        parent,
+        database: Database,
+        on_filter_callback=None,
+        show_search: bool = True,
+        **kwargs
+    ):
         super().__init__(parent, **kwargs)
 
         self.database = database
         self.on_filter_callback = on_filter_callback
+        self.show_search = show_search
         self._create_widgets()
 
     def _create_widgets(self):
         """Create filter widgets."""
-        # Search text
-        search_frame = ctk.CTkFrame(self, fg_color="transparent")
-        search_frame.pack(fill="x", padx=5, pady=2)
+        if self.show_search:
+            search_frame = ctk.CTkFrame(self, fg_color="transparent")
+            search_frame.pack(fill="x", padx=5, pady=2)
 
-        ctk.CTkLabel(search_frame, text="Search:", width=80).pack(side="left")
-        self.search_entry = ctk.CTkEntry(search_frame, placeholder_text="Search...", width=200)
-        self.search_entry.pack(side="left", padx=5)
+            ctk.CTkLabel(search_frame, text="Search:", width=80).pack(side="left")
+            self.search_entry = ctk.CTkEntry(search_frame, placeholder_text="Search...", width=200)
+            self.search_entry.pack(side="left", padx=5)
+        else:
+            self.search_entry = None
 
         # Lab filter
         lab_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -1581,12 +1682,23 @@ class FilterFrame(ctk.CTkFrame):
         self.lab_combo.set("All")
         self.lab_combo.pack(side="left", padx=5)
 
+        # Test type filter
+        test_frame = ctk.CTkFrame(self, fg_color="transparent")
+        test_frame.pack(fill="x", padx=5, pady=2)
+
+        ctk.CTkLabel(test_frame, text="Test Type:", width=80).pack(side="left")
+        test_types = ["All"] + self.database.get_test_types()
+        self.test_type_combo = ctk.CTkComboBox(test_frame, values=test_types, width=200)
+        self.test_type_combo.set("All")
+        self.test_type_combo.pack(side="left", padx=5)
+
         # Date range
         date_frame = ctk.CTkFrame(self, fg_color="transparent")
         date_frame.pack(fill="x", padx=5, pady=2)
 
         ctk.CTkLabel(date_frame, text="Date From:", width=80).pack(side="left")
-        self.date_from = ctk.CTkEntry(date_frame, placeholder_text="YYYY-MM-DD", width=120)
+        self.date_from = ctk.CTkComboBox(date_frame, values=["All"], width=140)
+        self.date_from.set("All")
         self.date_from.pack(side="left", padx=5)
 
         ctk.CTkLabel(date_frame, text="To:", width=30).pack(side="left")
@@ -1613,19 +1725,25 @@ class FilterFrame(ctk.CTkFrame):
     def _apply_filter(self):
         """Apply the filter."""
         if self.on_filter_callback:
+            date_from_value = self.date_from.get().strip()
             filters = {
-                'search_text': self.search_entry.get().strip(),
+                'search_text': self.search_entry.get().strip() if self.search_entry else None,
                 'lab_name': self.lab_combo.get() if self.lab_combo.get() != "All" else None,
-                'date_from': self.date_from.get().strip() or None,
+                'test_service_type': (
+                    self.test_type_combo.get() if self.test_type_combo.get() != "All" else None
+                ),
+                'date_from': None if date_from_value in ("", "All") else date_from_value,
                 'date_to': self.date_to.get().strip() or None,
             }
             self.on_filter_callback(filters)
 
     def _clear_filter(self):
         """Clear all filters."""
-        self.search_entry.delete(0, tk.END)
+        if self.search_entry:
+            self.search_entry.delete(0, tk.END)
         self.lab_combo.set("All")
-        self.date_from.delete(0, tk.END)
+        self.test_type_combo.set("All")
+        self.date_from.set("All")
         self.date_to.delete(0, tk.END)
 
         if self.on_filter_callback:
@@ -1635,6 +1753,18 @@ class FilterFrame(ctk.CTkFrame):
         """Refresh the lab names in the combo box."""
         lab_names = ["All"] + self.database.get_lab_names()
         self.lab_combo.configure(values=lab_names)
+
+    def refresh_test_type_list(self):
+        """Refresh the test types in the combo box."""
+        test_types = ["All"] + self.database.get_test_types()
+        self.test_type_combo.configure(values=test_types)
+
+    def refresh_date_list(self, dates: List[str]):
+        """Refresh the date list in the combo box."""
+        values = ["All"] + sorted(set(dates))
+        self.date_from.configure(values=values)
+        if self.date_from.get() not in values:
+            self.date_from.set("All")
 
 
 class MainApplication(ctk.CTk):
@@ -1809,6 +1939,15 @@ class MainApplication(ctk.CTk):
     def _create_abnormal_tab(self):
         """Create the abnormal items tab."""
         self.abnormal_frame = ctk.CTkFrame(self.content_container)
+
+        # Filter panel
+        self.abnormal_filter_frame = FilterFrame(
+            self.abnormal_frame,
+            self.database,
+            on_filter_callback=self._on_abnormal_filter,
+            show_search=False
+        )
+        self.abnormal_filter_frame.pack(fill="x", padx=5, pady=5)
 
         # Info label
         info_label = ctk.CTkLabel(
@@ -2457,6 +2596,11 @@ class MainApplication(ctk.CTk):
 
         # Update filter lab list
         self.filter_frame.refresh_lab_list()
+        self.filter_frame.refresh_test_type_list()
+        self.filter_frame.refresh_date_list(self._collect_invoice_dates(invoices))
+        self.abnormal_filter_frame.refresh_lab_list()
+        self.abnormal_filter_frame.refresh_test_type_list()
+        self.abnormal_filter_frame.refresh_date_list(self._collect_invoice_dates(abnormal))
 
     def _on_filter(self, filters: Dict[str, Any]):
         """Handle filter application."""
@@ -2485,6 +2629,47 @@ class MainApplication(ctk.CTk):
         else:
             self._refresh_data()
             self._update_status("Filter cleared")
+
+    def _on_abnormal_filter(self, filters: Dict[str, Any]):
+        """Handle abnormal filter application."""
+        if any(filters.values()):
+            results = self.database.search_abnormal_invoices(filters)
+            ipc_results = self._decorate_external_records(
+                self.ipc_database.search_inspections(filters),
+                source="ipc",
+                prefix="IPC-",
+                include_validation_error=True
+            )
+            fqa_results = self._decorate_external_records(
+                self.fqa_database.search_invoices(filters),
+                source="fqa",
+                prefix="FQA-",
+                include_validation_error=True
+            )
+            psi_results = self._decorate_external_records(
+                self.psi_database.search_invoices(filters),
+                source="psi",
+                prefix="PSI-",
+                include_validation_error=True
+            )
+            results.extend(ipc_results)
+            results.extend(fqa_results)
+            results.extend(psi_results)
+            self.abnormal_table.load_data(results)
+            self._update_status(f"Abnormal filter applied: {len(results)} records found")
+        else:
+            self._refresh_data()
+            self._update_status("Abnormal filter cleared")
+
+    @staticmethod
+    def _collect_invoice_dates(records: List[Dict[str, Any]]) -> List[str]:
+        """Collect distinct invoice dates from records."""
+        dates = []
+        for record in records:
+            date_value = record.get("invoice_date")
+            if date_value:
+                dates.append(str(date_value))
+        return dates
 
     def _on_select_invoice(self, record: Optional[Dict[str, Any]]):
         """Handle invoice selection."""

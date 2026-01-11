@@ -732,6 +732,9 @@ class DataValidator:
         self.allowed_test_types = {
             self._normalize_test_type(t) for t in allowed_test_types if t is not None
         }
+        self.test_type_lookup = {
+            self._normalize_test_type(t): t for t in allowed_test_types if t is not None
+        }
 
     @staticmethod
     def _normalize_test_type(value: str) -> str:
@@ -761,6 +764,8 @@ class DataValidator:
             test_type_normalized = self._normalize_test_type(test_type)
             if test_type_normalized and test_type_normalized not in self.allowed_test_types:
                 errors.append(f"Invalid Test Type: {test_type}")
+            elif test_type_normalized in self.test_type_lookup:
+                record['test_service_type'] = self.test_type_lookup[test_type_normalized]
         else:
             # Empty test type is also invalid
             errors.append("Missing Test/Service Type")

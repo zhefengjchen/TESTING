@@ -336,6 +336,50 @@ class Database:
             query += " AND invoice_date <= ?"
             params.append(filters['date_to'])
 
+        if filters.get('test_service_type'):
+            query += " AND test_service_type = ?"
+            params.append(filters['test_service_type'])
+
+        if filters.get('search_text'):
+            search_term = f"%{filters['search_text']}%"
+            query += """ AND (
+                tajan_bidding_tracking_number LIKE ? OR
+                amazon_test_request LIKE ? OR
+                asin LIKE ? OR
+                product_brand LIKE ? OR
+                product_description LIKE ? OR
+                invoice_number LIKE ?
+            )"""
+            params.extend([search_term] * 6)
+
+        query += " ORDER BY id DESC"
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    def search_abnormal_invoices(self, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Search abnormal invoices with filters."""
+        cursor = self.conn.cursor()
+
+        query = "SELECT * FROM abnormal_invoices WHERE 1=1"
+        params = []
+
+        if filters.get('lab_name'):
+            query += " AND lab_name = ?"
+            params.append(filters['lab_name'])
+
+        if filters.get('date_from'):
+            query += " AND invoice_date >= ?"
+            params.append(filters['date_from'])
+
+        if filters.get('date_to'):
+            query += " AND invoice_date <= ?"
+            params.append(filters['date_to'])
+
+        if filters.get('test_service_type'):
+            query += " AND test_service_type = ?"
+            params.append(filters['test_service_type'])
+
         if filters.get('search_text'):
             search_term = f"%{filters['search_text']}%"
             query += """ AND (
@@ -558,6 +602,10 @@ class PsiDatabase:
             query += " AND invoice_date <= ?"
             params.append(filters['date_to'])
 
+        if filters.get('test_service_type'):
+            query += " AND test_service_type = ?"
+            params.append(filters['test_service_type'])
+
         if filters.get('search_text'):
             search_term = f"%{filters['search_text']}%"
             query += """ AND (
@@ -710,6 +758,10 @@ class FqaDatabase:
             query += " AND invoice_date <= ?"
             params.append(filters['date_to'])
 
+        if filters.get('test_service_type'):
+            query += " AND test_service_type = ?"
+            params.append(filters['test_service_type'])
+
         if filters.get('search_text'):
             search_term = f"%{filters['search_text']}%"
             query += """ AND (
@@ -861,6 +913,10 @@ class PsiInspectionDatabase:
         if filters.get('date_to'):
             query += " AND invoice_date <= ?"
             params.append(filters['date_to'])
+
+        if filters.get('test_service_type'):
+            query += " AND test_service_type = ?"
+            params.append(filters['test_service_type'])
 
         if filters.get('search_text'):
             search_term = f"%{filters['search_text']}%"
