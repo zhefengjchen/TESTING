@@ -940,3 +940,155 @@ class PsiInspectionDatabase:
         """Close database connection."""
         if self.conn:
             self.conn.close()
+
+
+class PsiInspectionDatabase:
+    """SQLite database handler for PSI inspection data."""
+
+    PSI_COLUMNS = Database.INVOICE_COLUMNS
+
+    def __init__(self, db_path: str = None):
+        """Initialize database connection."""
+        if db_path is None:
+            db_path = Database.PSI_DB_PATH
+        self.db_path = db_path
+        self._ensure_db_directory()
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        self._create_tables()
+
+    def _ensure_db_directory(self):
+        """Ensure the database directory exists."""
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir)
+
+    def _create_tables(self):
+        """Create PSI inspection tables."""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS psi_invoices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tajan_bidding_tracking_number TEXT,
+                amazon_test_request TEXT,
+                amazon_tracker_number TEXT,
+                asin TEXT,
+                development_center TEXT,
+                category TEXT,
+                product_brand TEXT,
+                product_description TEXT,
+                testing_sla TEXT,
+                test_service_type TEXT,
+                quotation_order_number TEXT,
+                request_date TEXT,
+                test_start_date TEXT,
+                report_delivered_date TEXT,
+                report_number TEXT,
+                test_inspection_location TEXT,
+                product_line TEXT,
+                amazon_quality_manager TEXT,
+                amazon_sourcing_manager TEXT,
+                invoice_number TEXT,
+                lab_contact TEXT,
+                comment TEXT,
+                amount_usd REAL,
+                lab_name TEXT,
+                invoice_date TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        self.conn.commit()
+
+    def insert_invoice(self, data: Dict[str, Any]) -> int:
+        """Insert a new PSI record."""
+        cursor = self.conn.cursor()
+        columns = [col for col in self.PSI_COLUMNS if col not in ('id', 'created_at', 'updated_at')]
+        placeholders = ', '.join(['?' for _ in columns])
+        column_names = ', '.join(columns)
+
+        values = [data.get(col, '') for col in columns]
+
+        cursor.execute(f"""
+            INSERT INTO psi_invoices ({column_names})
+            VALUES ({placeholders})
+        """, values)
+
+        self.conn.commit()
+        return cursor.lastrowid
+
+    def get_all_invoices(self) -> List[Dict[str, Any]]:
+        """Get all PSI records."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM psi_invoices ORDER BY id DESC")
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    def update_invoice(self, invoice_id: int, data: Dict[str, Any]) -> bool:
+        """Update a PSI record."""
+        cursor = self.conn.cursor()
+        set_clauses = []
+        values = []
+
+        for key, value in data.items():
+            if key not in ('id', 'created_at'):
+                set_clauses.append(f"{key} = ?")
+                values.append(value)
+
+        set_clauses.append("updated_at = ?")
+        values.append(datetime.now().isoformat())
+        values.append(invoice_id)
+
+        query = f"UPDATE psi_invoices SET {', '.join(set_clauses)} WHERE id = ?"
+        cursor.execute(query, values)
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def delete_invoice(self, invoice_id: int) -> bool:
+        """Delete a PSI record."""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM psi_invoices WHERE id = ?", (invoice_id,))
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def search_invoices(self, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Search PSI records with filters."""
+        cursor = self.conn.cursor()
+
+        query = "SELECT * FROM psi_invoices WHERE 1=1"
+        params = []
+
+        if filters.get('lab_name'):
+            query += " AND lab_name = ?"
+            params.append(filters['lab_name'])
+
+        if filters.get('date_from'):
+            query += " AND invoice_date >= ?"
+            params.append(filters['date_from'])
+
+        if filters.get('date_to'):
+            query += " AND invoice_date <= ?"
+            params.append(filters['date_to'])
+
+        if filters.get('search_text'):
+            search_term = f"%{filters['search_text']}%"
+            query += """ AND (
+                tajan_bidding_tracking_number LIKE ? OR
+                amazon_test_request LIKE ? OR
+                amazon_tracker_number LIKE ? OR
+                product_brand LIKE ? OR
+                product_description LIKE ? OR
+                invoice_number LIKE ? OR
+                report_number LIKE ?
+            )"""
+            params.extend([search_term] * 7)
+
+        query += " ORDER BY id DESC"
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    def close(self):
+        """Close database connection."""
+        if self.conn:
+            self.conn.close()
